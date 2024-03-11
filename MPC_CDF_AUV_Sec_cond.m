@@ -3,7 +3,7 @@ clear;
 close all;
 addpath("C:\Users\Sajad\Documents\Casadi")
 %% Setup and Parameters
-x0 = [10; 10; 10; 0; 0; 0; 0; 0];%Initial Condition
+x0 = [-10; -10; -10; -2; 0; 0; 0; 0];%Initial Condition
 xf = [0; 0; 0; 0; 0; 0; 0; 0]; % X final
 time_total = 10;%Time for the total steps, equal to tsim
 dt = 0.02;
@@ -12,25 +12,25 @@ Q = 10*diag([10,10,10, 10, o, o, o, o]);
 P_weight = 100*diag([10,10,10,10, o, o, o, o]);
 R = 1*diag([1, 1, 1, 1]);
 N = 10;
-C_t = 0.011;
+
 
 %Variables range as below
 xmin = [-inf; -inf; -inf;-100; -100; -100; -100; -100];
 xmax = -xmin;%[10; 10; 10; 100; 100; 100; 100; 100];
 
-umin = [-3; -3; -3; -3];
+umin = [-inf; -inf; -inf; -inf];
 umax = -umin;
 
 %First Obstacle
-x_obs_1 = 8;
-y_obs_1 = 8;
-z_obs_1 = 8.5;
+x_obs_1 = -8;
+y_obs_1 = -8;
+z_obs_1 = -8.5;
 r_obs_1 = 1;
 
 %Second Obstacle
-x_obs_2 = 4.1;
-y_obs_2 = 4.1;
-z_obs_2 = 3.5;
+x_obs_2 = -4.1;
+y_obs_2 = -4.1;
+z_obs_2 = -3.5;
 r_obs_2 = 1.5;
 %%
 import casadi.*
@@ -114,15 +114,42 @@ n_controls = length(controls);
                       0 0 0 0;
                       (m-Yvdot)*V(2) -(m-Xudot)*V(1) 0 0];
             C = (invJ)' * (Cv - M * invJ * Jdot) * invJ;
-            fx = invM * (-C * [x; y; z; psi] - D * [xdot; ydot; zdot; psidot]);
-
+            fx = invM * (-C * [xdot; ydot; zdot; psidot] - D * [xdot; ydot; zdot; psidot]);
+            F_sys = [xdot; ydot; zdot; psidot;fx];
+            
+            jacob_F = jacobian(dt*F_sys + states , [x; y; z; psi; xdot; ydot; zdot; psidot]');
+            dive_F = sum(diag(jacob_F));
+            
+          
+            G_sys = dt*[zeros(4);invM * (invJ)'];
+            G_sys_1 = G_sys(:,1);
+            jacob_G_sys_1 = jacobian(G_sys_1,[x; y; z; psi; xdot; ydot; zdot; psidot]');
+            dive_G_sys_1 = sum(diag(jacob_G_sys_1));
+            G_sys_2 = G_sys(:,2);
+            jacob_G_sys_2 = jacobian(G_sys_2,[x; y; z; psi; xdot; ydot; zdot; psidot]');
+            dive_G_sys_2 = sum(diag(jacob_G_sys_2));
+            G_sys_3 = G_sys(:,3);
+            jacob_G_sys_3 = jacobian(G_sys_3,[x; y; z; psi; xdot; ydot; zdot; psidot]');
+            dive_G_sys_3 = sum(diag(jacob_G_sys_3));
+            G_sys_4 = G_sys(:,4);
+            jacob_G_sys_4 = jacobian(G_sys_4,[x; y; z; psi; xdot; ydot; zdot; psidot]');
+            dive_G_sys_4 = sum(diag(jacob_G_sys_4));
+            
             u_sys = invM * (invJ)' * controls;
             X2_dot = fx + u_sys;
-
+        
 rhs = [X1_dot; X2_dot];
 
 % nonlinear mapping function f(x,u)
 f = Function('f',{states,controls},{rhs}); 
+Dive_F = Function('Dive_F',{states},{dive_F});
+Dive_G_1 = Function('Dive_G_1',{states},{dive_G_sys_1});
+Dive_G_2 = Function('Dive_G_2',{states},{dive_G_sys_2});
+Dive_G_3 = Function('Dive_G_3',{states},{dive_G_sys_3});
+Dive_G_4 = Function('Dive_G_4',{states},{dive_G_sys_4});
+
+f1 = Function('f1',{states},{F_sys}); 
+g1 = Function('g',{states},{G_sys});
 % Decision variables (controls)
 U = SX.sym('U',n_controls,N); 
 C = SX.sym('C',N); 
@@ -140,7 +167,6 @@ for k = 1:N
     st = X(:,k);
     con = U(:,k);
     obj = obj+(st-P(9:16))'*Q*(st-P(9:16)) + con'*R*con; % calculate obj
-    obj = obj + sqrt((C(k))^2);
     st_next = X(:,k+1);
     f_value = f(st,con);
     st_next_euler = st+ (dt*f_value);
@@ -161,80 +187,70 @@ obj = obj+(st-P(9:16))'*P_weight*(st-P(9:16)); % calculate obj
 % f_bar = f(tau)/(f(tau)+f(1-tau));
 % Sk = (r_obs+2)^2;
 P_lyap = 0.5*eye(4);
+alpha = 10;
 for k = 1:N
-    if k==1
-      con = 0;  
-    else
-       con = U(:,k-1);
-    end
-    st = X(:,k-1);  
+    st = X(:,k);
+    con = U(:,k);
     hk = (st(1)-x_obs_1)^2 + (st(2)-y_obs_1)^2 + (st(3)-z_obs_1)^2 - r_obs_1^2;
     Sk = (st(1)-x_obs_1)^2 + (st(2)-y_obs_1)^2 + (st(3)-z_obs_1)^2 - (r_obs_1+1)^2 ;
     temp1 = hk / (hk-Sk);
     f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
     Phi = f_bar1;
     V = ([st(1) st(2) st(3) st(4)] *P_lyap*[st(1); st(2); st(3); st(4)]);
-    rho = Phi/V;
-    mu = f(st,con)*rho;
+    rho = Phi/(V.^alpha);
 
-    st_next = X(:,k);
-    con_next = U(:,k);
+    st_next = X(:,k+1);
+    % con_next = U(:,k+1);
     hk_next = (st_next(1)-x_obs_1)^2 + (st_next(2)-y_obs_1)^2 + (st_next(3)-z_obs_1)^2 - r_obs_1^2;
     Sk_next = (st_next(1)-x_obs_1)^2 + (st_next(2)-y_obs_1)^2 + (st_next(3)-z_obs_1)^2 - (r_obs_1+1)^2 ;
     temp2 = hk_next/(hk_next-Sk_next);
     f_bar2 = if_else(temp2 > 0, exp(-1/temp2), 0)/(if_else(temp2 > 0, exp(-1/temp2), 0) + if_else(1-temp2 > 0, exp(-1/(1-temp2)), 0));
     Phi_next = f_bar2;
     V_next = [st_next(1) st_next(2) st_next(3) st_next(4)] *P_lyap*[st_next(1); st_next(2); st_next(3); st_next(4)];
-    rho_next = Phi_next/V_next;
-    mu_next = f(st_next,con_next)*rho_next;
-    
-    dive = (mu_next(1)-mu(1))/(st_next(1)-st(1)) + (mu_next(2)-mu(2))/(st_next(2)-st(2))...
-        + (mu_next(3)-mu(3))/(st_next(3)-st(3)) + (mu_next(4)-mu(4))/(st_next(4)-st(4))...
-        + (mu_next(5)-mu(5))/(st_next(5)-st(5)) + (mu_next(6)-mu(6))/(st_next(6)-st(6))...
-        + (mu_next(7)-mu(7))/(st_next(7)-st(7)) + (mu_next(8)-mu(8))/(st_next(8)-st(8));
-    g = [g;C(k)-eps]; % compute constraints
-    g = [g; dive+C(k)];
-    % g = [g; rho_next ];
-    
+    rho_next = Phi_next/(V_next.^alpha);
+
+
+    f_value = f1(st);
+    f_value_next = f1(st_next);
+    C1 = Dive_F(st);
+    C1 = C1*rho;
+
+    % C2_1 = Dive_G_1(st);
+
+
+    g = [g; rho_next - rho + dt*C1];
+
 end
 
 
 P_lyap = 0.5*eye(4);
 for k = 1:N
-    if k==1
-      con = 0;  
-    else
-       con = U(:,k-1);
-    end
-    st = X(:,k-1);
+    st = X(:,k);
     hk = (st(1)-x_obs_2)^2 + (st(2)-y_obs_2)^2 + (st(3)-z_obs_2)^2 - r_obs_2^2;
     Sk = (st(1)-x_obs_2)^2 + (st(2)-y_obs_2)^2 + (st(3)-z_obs_2)^2 - (r_obs_2+1)^2 ;
     temp1 = hk / (hk-Sk);
     f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
     Phi = f_bar1;
     V = ([st(1) st(2) st(3) st(4)] *P_lyap*[st(1); st(2); st(3); st(4)]);
-    rho = Phi/V;
-    mu = f(st,con)*rho;
+    rho = Phi/(V.^alpha);
 
-    st_next = X(:,k);
-    con_next = U(:,k);
+    st_next = X(:,k+1);
     hk_next = (st_next(1)-x_obs_2)^2 + (st_next(2)-y_obs_2)^2 + (st_next(3)-z_obs_2)^2 - r_obs_2^2;
     Sk_next = (st_next(1)-x_obs_2)^2 + (st_next(2)-y_obs_2)^2 + (st_next(3)-z_obs_2)^2 - (r_obs_2+1)^2 ;
     temp2 = hk_next/(hk_next-Sk_next);
     f_bar2 = if_else(temp2 > 0, exp(-1/temp2), 0)/(if_else(temp2 > 0, exp(-1/temp2), 0) + if_else(1-temp2 > 0, exp(-1/(1-temp2)), 0));
     Phi_next = f_bar2;
     V_next = [st_next(1) st_next(2) st_next(3) st_next(4)] *P_lyap*[st_next(1); st_next(2); st_next(3); st_next(4)];
-    rho_next = Phi_next/V_next;
-    mu_next = f(st_next,con_next)*rho_next;
-    
-    dive = (mu_next(1)-mu(1))/(st_next(1)-st(1)) + (mu_next(2)-mu(2))/(st_next(2)-st(2))...
-        + (mu_next(3)-mu(3))/(st_next(3)-st(3)) + (mu_next(4)-mu(4))/(st_next(4)-st(4))...
-        + (mu_next(5)-mu(5))/(st_next(5)-st(5)) + (mu_next(6)-mu(6))/(st_next(6)-st(6))...
-        + (mu_next(7)-mu(7))/(st_next(7)-st(7)) + (mu_next(8)-mu(8))/(st_next(8)-st(8));
-    g = [g; dive+C(k)];
+    rho_next = Phi_next/(V_next.^alpha);
 
-    % g = [g; rho_next - rho];
-    % g = [g; rho_next ];
+    
+    C1 = Dive_F(st);
+    C1 = C1*rho;
+
+    % C2_1 = Dive_G_1(st);
+
+
+    g = [g; rho_next - rho + dt*C1];
     
 end
 
@@ -242,9 +258,8 @@ end
 
 
 
-
 % make the decision variable one column  vector
-OPT_variables = [reshape(X,8*(N+1),1);reshape(U,4*N,1);reshape(C,N,1)];
+OPT_variables = [reshape(X,8*(N+1),1);reshape(U,4*N,1)];
 nlp_prob = struct('f', obj, 'x', OPT_variables, 'g', g, 'p', P);
 
 opts = struct;
@@ -260,8 +275,8 @@ args = struct;
 args.lbg(1:8*(N+1)) = 0; % equality constraints
 args.ubg(1:8*(N+1)) = 0; % equality constraints
 
-args.lbg(8*(N+1)+1 : 8*(N+1)+ (3*N)) = 0; % inequality constraints
-args.ubg(8*(N+1)+1 : 8*(N+1)+ (3*N)) = inf; % inequality constraints
+args.lbg(8*(N+1)+1 : 8*(N+1)+ (2*N)) = 0; % inequality constraints
+args.ubg(8*(N+1)+1 : 8*(N+1)+ (2*N)) = inf; % inequality constraints
 
 args.lbx(1:8:8*(N+1),1) = xmin(1); %state x lower bound
 args.ubx(1:8:8*(N+1),1) = xmax(1); %state x upper bound
@@ -289,8 +304,7 @@ args.ubx(8*(N+1)+3:4:8*(N+1)+4*N,1) = umax(3); %q upper bound
 args.lbx(8*(N+1)+4:4:8*(N+1)+4*N,1) = umin(4); %r lower bound
 args.ubx(8*(N+1)+4:4:8*(N+1)+4*N,1) = umax(4); %r upper bound
 
-args.lbx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = 0; %C lower bound
-args.ubx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = inf; %C upper bound
+
 
 
 %% Simulation
@@ -302,22 +316,20 @@ t(1) = t0;
 
 u0 = zeros(N,4);
 X0 = repmat(x0,1,N+1)';
-C_0 = repmat(C_t,1,N);
 
 % Start MPC
 mpciter = 0;
 xx1 = [];
 u_cl=[];
-C_log = [];
 
 tic
 while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     args.p   = [x0;xf]; % set the values of the parameters vector
     % initial value of the optimization variables
-    args.x0  = [reshape(X0',8*(N+1),1);reshape(u0',4*N,1);reshape(C_0',N,1)];
+    args.x0  = [reshape(X0',8*(N+1),1);reshape(u0',4*N,1)];
     sol = solver('x0', args.x0, 'lbx', args.lbx, 'ubx', args.ubx,...
         'lbg', args.lbg, 'ubg', args.ubg,'p',args.p);
-    u = reshape(full(sol.x(8*(N+1)+1:end-10))',4,N)'; % get controls only from the solution
+    u = reshape(full(sol.x(8*(N+1)+1:end))',4,N)'; % get controls only from the solution
     xx1(:,1:8,mpciter+1)= reshape(full(sol.x(1:8*(N+1)))',8,N+1)'; % get solution TRAJECTORY
     u_cl= [u_cl ; u(1,:)];
     t(mpciter+1) = t0;
@@ -325,8 +337,6 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     [t0, x0, u0] = shift(dt, t0, x0, u,f);
     xlog(:,mpciter+1) = x0;
     X0 = reshape(full(sol.x(1:8*(N+1)))',8,N+1)'; % get solution TRAJECTORY
-    C_0 = reshape(full(sol.x(end-10+1:end))',1,N);
-    C_log = [C_log; C_0];
     % Shift trajectory to initialize the next step
     X0 = [X0(2:end,:);X0(end,:)];
     mpciter
@@ -443,3 +453,12 @@ hold on
 % 
 surf(r_obs_1*(X)+x_obs_1,r_obs_1*(Y)+y_obs_1,r_obs_1*(Z)+z_obs_1)
 surf(r_obs_2*(X)+x_obs_2,r_obs_2*(Y)+y_obs_2,r_obs_2*(Z)+z_obs_2)
+
+%%
+F_values = [];
+for i=1:length(xlog)
+    F_values = [F_values;Dive_F(xlog(:,i))];
+end
+
+
+

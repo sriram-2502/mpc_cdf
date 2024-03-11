@@ -12,7 +12,7 @@ Q = 10*diag([10,10,10, 10, o, o, o, o]);
 P_weight = 100*diag([10,10,10,10, o, o, o, o]);
 R = 1*diag([1, 1, 1, 1]);
 N = 10;
-C_t = 0.011;
+C_t = 0.1;
 
 %Variables range as below
 xmin = [-inf; -inf; -inf;-100; -100; -100; -100; -100];
@@ -114,7 +114,8 @@ n_controls = length(controls);
                       0 0 0 0;
                       (m-Yvdot)*V(2) -(m-Xudot)*V(1) 0 0];
             C = (invJ)' * (Cv - M * invJ * Jdot) * invJ;
-            fx = invM * (-C * [x; y; z; psi] - D * [xdot; ydot; zdot; psidot]);
+            fx = invM * (-C * [xdot; ydot; zdot; psidot] - D * [xdot; ydot; zdot; psidot]);
+            % f = [X2_dot;fx];
 
             u_sys = invM * (invJ)' * controls;
             X2_dot = fx + u_sys;
