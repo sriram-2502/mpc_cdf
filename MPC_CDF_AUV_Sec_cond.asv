@@ -11,7 +11,7 @@ o = 3;
 Q = 10*diag([10,10,10, 10, o, o, o, o]);
 P_weight = 100*diag([10,10,10,10, o, o, o, o]);
 R = 1*diag([1, 1, 1, 1]);
-N = 20;
+N = 10;
 
 
 %Variables range as below
@@ -28,7 +28,7 @@ z_obs_1 = 8.5;
 r_obs_1 = 1;
 
 %Second Obstacle
-x_obs_2 = 4.1;
+x_obs_2 = 4.2;
 y_obs_2 = 4.1;
 z_obs_2 = 3.5;
 r_obs_2 = 1.5;
@@ -117,29 +117,54 @@ n_controls = length(controls);
             fx = invM * (-C * [xdot; ydot; zdot; psidot] - D * [xdot; ydot; zdot; psidot]);
             F_sys = [xdot; ydot; zdot; psidot;fx];
             
-            jacob_F = jacobian(F_sys, [x; y; z; psi; xdot; ydot; zdot; psidot]');
+            % jacob_F = jacobian(dt*F_sys + states , [x; y; z; psi; xdot; ydot; zdot; psidot]');
+            jacob_F = jacobian(F_sys , [x; y; z; psi; xdot; ydot; zdot; psidot]');
             dive_F = sum(diag(jacob_F));
             
           
-            G_sys = [zeros(4);invM * (invJ)'];
+            % G_sys = dt*[zeros(4);invM * (invJ)'];
+             G_sys = dt*[zeros(4);invM * (invJ)'];
             G_sys_1 = G_sys(:,1);
-            jacob_G_sys_1 = jacobian(G_sys_1)
+            jacob_G_sys_1 = jacobian(G_sys_1,[x; y; z; psi; xdot; ydot; zdot; psidot]');
+            dive_G_sys_1 = sum(diag(jacob_G_sys_1));
             G_sys_2 = G_sys(:,2);
+            jacob_G_sys_2 = jacobian(G_sys_2,[x; y; z; psi; xdot; ydot; zdot; psidot]');
+            dive_G_sys_2 = sum(diag(jacob_G_sys_2));
             G_sys_3 = G_sys(:,3);
+            jacob_G_sys_3 = jacobian(G_sys_3,[x; y; z; psi; xdot; ydot; zdot; psidot]');
+            dive_G_sys_3 = sum(diag(jacob_G_sys_3));
             G_sys_4 = G_sys(:,4);
+            jacob_G_sys_4 = jacobian(G_sys_4,[x; y; z; psi; xdot; ydot; zdot; psidot]');
+            dive_G_sys_4 = sum(diag(jacob_G_sys_4));
             
             u_sys = invM * (invJ)' * controls;
             X2_dot = fx + u_sys;
         
 rhs = [X1_dot; X2_dot];
 
+% hk = (x-x_obs_1)^2 + (y-y_obs_1)^2 + (z-z_obs_1)^2 - r_obs_1^2;
+% Sk = (x-x_obs_1)^2 + (y-y_obs_1)^2 + (z-z_obs_1)^2 - (r_obs_1+1)^2 ;
+% temp1 = hk / (hk-Sk);
+% f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
+% Phi = f_bar1;
+% V = ([st(1) st(2) st(3) st(4)] *P_lyap*[st(1); st(2); st(3); st(4)]);
+% rho = Phi/(V.^alpha);
+
 % nonlinear mapping function f(x,u)
 f = Function('f',{states,controls},{rhs}); 
-Dive_F = Function('Dive_F',{states},{dive_F})
+Dive_F = Function('Dive_F',{states},{dive_F});
+Dive_G_1 = Function('Dive_G_1',{states},{dive_G_sys_1});
+Dive_G_2 = Function('Dive_G_2',{states},{dive_G_sys_2});
+Dive_G_3 = Function('Dive_G_3',{states},{dive_G_sys_3});
+Dive_G_4 = Function('Dive_G_4',{states},{dive_G_sys_4});
+
+
+
 f1 = Function('f1',{states},{F_sys}); 
 g1 = Function('g',{states},{G_sys});
 % Decision variables (controls)
 U = SX.sym('U',n_controls,N); 
+C = SX.sym('C',N); 
 % parameters (which include at the initial state of the robot and the reference state)
 P = SX.sym('P',n_states + n_states);
 % A vector that represents the states over the optimization problem.
@@ -173,56 +198,44 @@ obj = obj+(st-P(9:16))'*P_weight*(st-P(9:16)); % calculate obj
 % f = Function('f', {tau}, {y});
 % f_bar = f(tau)/(f(tau)+f(1-tau));
 % Sk = (r_obs+2)^2;
-% P_lyap = 0.5*eye(4);
-% for k = 1:N
-%     st = X(:,k);
-%     con = U(:,k);
-%     hk = (st(1)-x_obs_1)^2 + (st(2)-y_obs_1)^2 + (st(3)-z_obs_1)^2 - r_obs_1^2;
-%     Sk = (st(1)-x_obs_1)^2 + (st(2)-y_obs_1)^2 + (st(3)-z_obs_1)^2 - (r_obs_1+1)^2 ;
-%     temp1 = hk / (hk-Sk);
-%     f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
-%     Phi = f_bar1;
-%     V = ([st(1) st(2) st(3) st(4)] *P_lyap*[st(1); st(2); st(3); st(4)]);
-%     rho = Phi/V;
-% 
-%     st_next = X(:,k+1);
-%     % con_next = U(:,k+1);
-%     hk_next = (st_next(1)-x_obs_1)^2 + (st_next(2)-y_obs_1)^2 + (st_next(3)-z_obs_1)^2 - r_obs_1^2;
-%     Sk_next = (st_next(1)-x_obs_1)^2 + (st_next(2)-y_obs_1)^2 + (st_next(3)-z_obs_1)^2 - (r_obs_1+1)^2 ;
-%     temp2 = hk_next/(hk_next-Sk_next);
-%     f_bar2 = if_else(temp2 > 0, exp(-1/temp2), 0)/(if_else(temp2 > 0, exp(-1/temp2), 0) + if_else(1-temp2 > 0, exp(-1/(1-temp2)), 0));
-%     Phi_next = f_bar2;
-%     V_next = [st_next(1) st_next(2) st_next(3) st_next(4)] *P_lyap*[st_next(1); st_next(2); st_next(3); st_next(4)];
-%     rho_next = Phi_next/V_next;
-% 
-%     f_value = f1(st);
-%     f_value_next = f1(st_next);
-%     C1 = (f_value_next(1)-f_value(1))/(st_next(1)-st(1)) + (f_value_next(2)-f_value(2))/(st_next(2)-st(2))...
-%         + (f_value_next(3)-f_value(3))/(st_next(3)-st(3)) + (f_value_next(4)-f_value(4))/(st_next(4)-st(4))...
-%         + (f_value_next(5)-f_value(5))/(st_next(5)-st(5)) + (f_value_next(6)-f_value(6))/(st_next(6)-st(6))...
-%         + (f_value_next(7)-f_value(7))/(st_next(7)-st(7)) + (f_value_next(8)-f_value(8))/(st_next(8)-st(8));
-% 
-%     C1 = C1*rho;
-% 
-%     g_value = g1(st);
-%     g_value_next = g1(st_next);
-%     C2 = 0;
-%     for i=1:4
-%         temp = (g_value_next(1,i) - g_value(1,i)/(st(1)-st_next(1))) + (g_value_next(2,i) - g_value(2,i)/(st(2)-st_next(2)))...
-%               + (g_value_next(3,i) - g_value(3,i)/(st(3)-st_next(3))) + (g_value_next(4,i) - g_value(4,i)/(st(4)-st_next(4)))...
-%               + (g_value_next(5,i) - g_value(5,i)/(st(5)-st_next(5))) + (g_value_next(6,i) - g_value(6,i)/(st(6)-st_next(6)))...
-%               + (g_value_next(7,i) - g_value(7,i)/(st(7)-st_next(7))) + (g_value_next(8,i) - g_value(8,i)/(st(8)-st_next(8)));
-%         temp = temp * rho * con(i);
-%         C2 = C2 + temp;
-%     end
-% 
-%     g = [g; rho_next - rho + C2 + C1];
-%     % g = [g; rho_next ];
-% 
-% end
+P_lyap = eye(8);
+alpha = 1.1;
+for k = 1:N
+    st = X(:,k);
+    con = U(:,k);
+    hk = (st(1)-x_obs_1)^2 + (st(2)-y_obs_1)^2 + (st(3)-z_obs_1)^2 - r_obs_1^2;
+    Sk = (st(1)-x_obs_1)^2 + (st(2)-y_obs_1)^2 + (st(3)-z_obs_1)^2 - (r_obs_1+1)^2 ;
+    temp1 = hk / (hk-Sk);
+    f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
+    Phi = f_bar1;
+    V = [st(1) st(2) st(3) st(4) st(5) st(6) st(7) st(8)] *P_lyap*([st(1); st(2); st(3); st(4); st(5); st(6); st(7); st(8)]);
+    rho = Phi/(V.^alpha);
+
+    st_next = X(:,k+1);
+    % con_next = U(:,k+1);
+    hk_next = (st_next(1)-x_obs_1)^2 + (st_next(2)-y_obs_1)^2 + (st_next(3)-z_obs_1)^2 - r_obs_1^2;
+    Sk_next = (st_next(1)-x_obs_1)^2 + (st_next(2)-y_obs_1)^2 + (st_next(3)-z_obs_1)^2 - (r_obs_1+1)^2 ;
+    temp2 = hk_next/(hk_next-Sk_next);
+    f_bar2 = if_else(temp2 > 0, exp(-1/temp2), 0)/(if_else(temp2 > 0, exp(-1/temp2), 0) + if_else(1-temp2 > 0, exp(-1/(1-temp2)), 0));
+    Phi_next = f_bar2;
+    V_next = [st_next(1) st_next(2) st_next(3) st_next(4) st_next(5) st_next(6) st_next(7) st_next(8)] *P_lyap*([st_next(1); st_next(2); st_next(3); st_next(4); st_next(5); st_next(6); st_next(7); st_next(8)]);
+    rho_next = Phi_next/(V_next.^alpha);
 
 
-P_lyap = 0.5*eye(4);
+    f_value = f1(st);
+    f_value_next = f1(st_next);
+    C1 = Dive_F(st);
+    C1 = C1*rho;
+
+    % C2_1 = Dive_G_1(st);
+
+
+    g = [g; rho_next - rho + dt*C1];
+
+end
+
+
+P_lyap = eye(8);
 for k = 1:N
     st = X(:,k);
     hk = (st(1)-x_obs_2)^2 + (st(2)-y_obs_2)^2 + (st(3)-z_obs_2)^2 - r_obs_2^2;
@@ -230,8 +243,8 @@ for k = 1:N
     temp1 = hk / (hk-Sk);
     f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
     Phi = f_bar1;
-    V = ([st(1) st(2) st(3) st(4)] *P_lyap*[st(1); st(2); st(3); st(4)]);
-    rho = Phi/V;
+    V = [st(1) st(2) st(3) st(4) st(5) st(6) st(7) st(8)] *P_lyap*([st(1); st(2); st(3); st(4); st(5); st(6); st(7); st(8)]);
+    rho = Phi/(V.^alpha);
 
     st_next = X(:,k+1);
     hk_next = (st_next(1)-x_obs_2)^2 + (st_next(2)-y_obs_2)^2 + (st_next(3)-z_obs_2)^2 - r_obs_2^2;
@@ -239,31 +252,17 @@ for k = 1:N
     temp2 = hk_next/(hk_next-Sk_next);
     f_bar2 = if_else(temp2 > 0, exp(-1/temp2), 0)/(if_else(temp2 > 0, exp(-1/temp2), 0) + if_else(1-temp2 > 0, exp(-1/(1-temp2)), 0));
     Phi_next = f_bar2;
-    V_next = [st_next(1) st_next(2) st_next(3) st_next(4)] *P_lyap*[st_next(1); st_next(2); st_next(3); st_next(4)];
-    rho_next = Phi_next/V_next;
+    V_next = [st_next(1) st_next(2) st_next(3) st_next(4) st_next(5) st_next(6) st_next(7) st_next(8)] *P_lyap*([st_next(1); st_next(2); st_next(3); st_next(4); st_next(5); st_next(6); st_next(7); st_next(8)]);
+    rho_next = Phi_next/(V_next.^alpha);
 
-    f_value = f1(st);
-    f_value_next = f1(st_next);
-    C1 = (f_value_next(1)-f_value(1))/(st_next(1)-st(1)) + (f_value_next(2)-f_value(2))/(st_next(2)-st(2))...
-        + (f_value_next(3)-f_value(3))/(st_next(3)-st(3)) + (f_value_next(4)-f_value(4))/(st_next(4)-st(4))...
-        + (f_value_next(5)-f_value(5))/(st_next(5)-st(5)) + (f_value_next(6)-f_value(6))/(st_next(6)-st(6))...
-        + (f_value_next(7)-f_value(7))/(st_next(7)-st(7)) + (f_value_next(8)-f_value(8))/(st_next(8)-st(8));
-
-    C1 = C1*rho;
     
-    g_value = g1(st);
-    g_value_next = g1(st_next);
-    C2 = 0;
-    for i=1:4
-        temp = (g_value_next(1,i) - g_value(1,i)/(st(1)-st_next(1))) + (g_value_next(2,i) - g_value(2,i)/(st(2)-st_next(2)))...
-              + (g_value_next(3,i) - g_value(3,i)/(st(3)-st_next(3))) + (g_value_next(4,i) - g_value(4,i)/(st(4)-st_next(4)))...
-              + (g_value_next(5,i) - g_value(5,i)/(st(5)-st_next(5))) + (g_value_next(6,i) - g_value(6,i)/(st(6)-st_next(6)))...
-              + (g_value_next(7,i) - g_value(7,i)/(st(7)-st_next(7))) + (g_value_next(8,i) - g_value(8,i)/(st(8)-st_next(8)));
-        temp = temp * rho * con(i);
-        C2 = C2 + temp;
-    end
+    C1 = Dive_F(st);
+    C1 = C1*rho;
 
-    g = [g; rho_next - rho + C2 + C1];
+    % C2_1 = Dive_G_1(st);
+
+
+    g = [g; rho_next - rho + dt*C1];
     
 end
 
@@ -288,8 +287,8 @@ args = struct;
 args.lbg(1:8*(N+1)) = 0; % equality constraints
 args.ubg(1:8*(N+1)) = 0; % equality constraints
 
-args.lbg(8*(N+1)+1 : 8*(N+1)+ (1*N)) = 0; % inequality constraints
-args.ubg(8*(N+1)+1 : 8*(N+1)+ (1*N)) = inf; % inequality constraints
+args.lbg(8*(N+1)+1 : 8*(N+1)+ (2*N)) = 0; % inequality constraints
+args.ubg(8*(N+1)+1 : 8*(N+1)+ (2*N)) = inf; % inequality constraints
 
 args.lbx(1:8:8*(N+1),1) = xmin(1); %state x lower bound
 args.ubx(1:8:8*(N+1),1) = xmax(1); %state x upper bound
@@ -466,3 +465,12 @@ hold on
 % 
 surf(r_obs_1*(X)+x_obs_1,r_obs_1*(Y)+y_obs_1,r_obs_1*(Z)+z_obs_1)
 surf(r_obs_2*(X)+x_obs_2,r_obs_2*(Y)+y_obs_2,r_obs_2*(Z)+z_obs_2)
+
+%%
+F_values = [];
+for i=1:length(xlog)
+    F_values = [F_values;Dive_F(xlog(:,i))];
+end
+
+
+

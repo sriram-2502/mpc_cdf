@@ -3,10 +3,10 @@ clear;
 close all;
 addpath("C:\Users\Sajad\Documents\Casadi")
 %% Setup and Parameters
-x0 = [-10; -10; -10; -2; 0; 0; 0; 0];%Initial Condition
+x0 = [10; 10; 10; 2; 0; 0; 0; 0];%Initial Condition
 xf = [0; 0; 0; 0; 0; 0; 0; 0]; % X final
 time_total = 10;%Time for the total steps, equal to tsim
-dt = 0.02;
+dt = 0.01;
 o = 3;
 Q = 10*diag([10,10,10, 10, o, o, o, o]);
 P_weight = 100*diag([10,10,10,10, o, o, o, o]);
@@ -22,15 +22,15 @@ umin = [-inf; -inf; -inf; -inf];
 umax = -umin;
 
 %First Obstacle
-x_obs_1 = -8;
-y_obs_1 = -8;
-z_obs_1 = -8.5;
+x_obs_1 = 8;
+y_obs_1 = 8;
+z_obs_1 = 8.5;
 r_obs_1 = 1;
 
 %Second Obstacle
-x_obs_2 = -4.1;
-y_obs_2 = -4.1;
-z_obs_2 = -3.5;
+x_obs_2 = 3.2;
+y_obs_2 = 4.1;
+z_obs_2 = 3.5;
 r_obs_2 = 1.5;
 %%
 import casadi.*
@@ -118,10 +118,12 @@ n_controls = length(controls);
             F_sys = [xdot; ydot; zdot; psidot;fx];
             
             jacob_F = jacobian(dt*F_sys + states , [x; y; z; psi; xdot; ydot; zdot; psidot]');
+            % jacob_F = jacobian(F_sys , [x; y; z; psi; xdot; ydot; zdot; psidot]');
             dive_F = sum(diag(jacob_F));
             
           
             G_sys = dt*[zeros(4);invM * (invJ)'];
+             % G_sys = dt*[zeros(4);invM * (invJ)'];
             G_sys_1 = G_sys(:,1);
             jacob_G_sys_1 = jacobian(G_sys_1,[x; y; z; psi; xdot; ydot; zdot; psidot]');
             dive_G_sys_1 = sum(diag(jacob_G_sys_1));
@@ -140,6 +142,14 @@ n_controls = length(controls);
         
 rhs = [X1_dot; X2_dot];
 
+% hk = (x-x_obs_1)^2 + (y-y_obs_1)^2 + (z-z_obs_1)^2 - r_obs_1^2;
+% Sk = (x-x_obs_1)^2 + (y-y_obs_1)^2 + (z-z_obs_1)^2 - (r_obs_1+1)^2 ;
+% temp1 = hk / (hk-Sk);
+% f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
+% Phi = f_bar1;
+% V = ([st(1) st(2) st(3) st(4)] *P_lyap*[st(1); st(2); st(3); st(4)]);
+% rho = Phi/(V.^alpha);
+
 % nonlinear mapping function f(x,u)
 f = Function('f',{states,controls},{rhs}); 
 Dive_F = Function('Dive_F',{states},{dive_F});
@@ -147,6 +157,8 @@ Dive_G_1 = Function('Dive_G_1',{states},{dive_G_sys_1});
 Dive_G_2 = Function('Dive_G_2',{states},{dive_G_sys_2});
 Dive_G_3 = Function('Dive_G_3',{states},{dive_G_sys_3});
 Dive_G_4 = Function('Dive_G_4',{states},{dive_G_sys_4});
+
+
 
 f1 = Function('f1',{states},{F_sys}); 
 g1 = Function('g',{states},{G_sys});
@@ -186,8 +198,8 @@ obj = obj+(st-P(9:16))'*P_weight*(st-P(9:16)); % calculate obj
 % f = Function('f', {tau}, {y});
 % f_bar = f(tau)/(f(tau)+f(1-tau));
 % Sk = (r_obs+2)^2;
-P_lyap = 0.5*eye(4);
-alpha = 10;
+P_lyap = eye(8);
+alpha = 1.1;
 for k = 1:N
     st = X(:,k);
     con = U(:,k);
@@ -196,7 +208,7 @@ for k = 1:N
     temp1 = hk / (hk-Sk);
     f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
     Phi = f_bar1;
-    V = ([st(1) st(2) st(3) st(4)] *P_lyap*[st(1); st(2); st(3); st(4)]);
+    V = [st(1) st(2) st(3) st(4) st(5) st(6) st(7) st(8)] *P_lyap*([st(1); st(2); st(3); st(4); st(5); st(6); st(7); st(8)]);
     rho = Phi/(V.^alpha);
 
     st_next = X(:,k+1);
@@ -206,7 +218,7 @@ for k = 1:N
     temp2 = hk_next/(hk_next-Sk_next);
     f_bar2 = if_else(temp2 > 0, exp(-1/temp2), 0)/(if_else(temp2 > 0, exp(-1/temp2), 0) + if_else(1-temp2 > 0, exp(-1/(1-temp2)), 0));
     Phi_next = f_bar2;
-    V_next = [st_next(1) st_next(2) st_next(3) st_next(4)] *P_lyap*[st_next(1); st_next(2); st_next(3); st_next(4)];
+    V_next = [st_next(1) st_next(2) st_next(3) st_next(4) st_next(5) st_next(6) st_next(7) st_next(8)] *P_lyap*([st_next(1); st_next(2); st_next(3); st_next(4); st_next(5); st_next(6); st_next(7); st_next(8)]);
     rho_next = Phi_next/(V_next.^alpha);
 
 
@@ -223,7 +235,7 @@ for k = 1:N
 end
 
 
-P_lyap = 0.5*eye(4);
+P_lyap = eye(8);
 for k = 1:N
     st = X(:,k);
     hk = (st(1)-x_obs_2)^2 + (st(2)-y_obs_2)^2 + (st(3)-z_obs_2)^2 - r_obs_2^2;
@@ -231,7 +243,7 @@ for k = 1:N
     temp1 = hk / (hk-Sk);
     f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
     Phi = f_bar1;
-    V = ([st(1) st(2) st(3) st(4)] *P_lyap*[st(1); st(2); st(3); st(4)]);
+    V = [st(1) st(2) st(3) st(4) st(5) st(6) st(7) st(8)] *P_lyap*([st(1); st(2); st(3); st(4); st(5); st(6); st(7); st(8)]);
     rho = Phi/(V.^alpha);
 
     st_next = X(:,k+1);
@@ -240,7 +252,7 @@ for k = 1:N
     temp2 = hk_next/(hk_next-Sk_next);
     f_bar2 = if_else(temp2 > 0, exp(-1/temp2), 0)/(if_else(temp2 > 0, exp(-1/temp2), 0) + if_else(1-temp2 > 0, exp(-1/(1-temp2)), 0));
     Phi_next = f_bar2;
-    V_next = [st_next(1) st_next(2) st_next(3) st_next(4)] *P_lyap*[st_next(1); st_next(2); st_next(3); st_next(4)];
+    V_next = [st_next(1) st_next(2) st_next(3) st_next(4) st_next(5) st_next(6) st_next(7) st_next(8)] *P_lyap*([st_next(1); st_next(2); st_next(3); st_next(4); st_next(5); st_next(6); st_next(7); st_next(8)]);
     rho_next = Phi_next/(V_next.^alpha);
 
     
