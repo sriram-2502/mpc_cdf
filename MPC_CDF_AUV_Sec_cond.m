@@ -3,16 +3,16 @@ clear;
 close all;
 addpath("C:\Users\Sajad\Documents\Casadi")
 %% Setup and Parameters
-x0 = [10; 10; 10; 2; 0; 0; 0; 0];%Initial Condition
+x0 = [15; 16; 17; 2; 0; 0; 0; 0];%Initial Condition
 xf = [0; 0; 0; 0; 0; 0; 0; 0]; % X final
 time_total = 10;%Time for the total steps, equal to tsim
-dt = 0.01;
+dt = 0.02;
 o = 3;
 Q = 10*diag([10,10,10, 10, o, o, o, o]);
 P_weight = 100*diag([10,10,10,10, o, o, o, o]);
 R = 1*diag([1, 1, 1, 1]);
 N = 10;
-
+C_t = 0.1;
 
 %Variables range as below
 xmin = [-inf; -inf; -inf;-100; -100; -100; -100; -100];
@@ -179,6 +179,7 @@ for k = 1:N
     st = X(:,k);
     con = U(:,k);
     obj = obj+(st-P(9:16))'*Q*(st-P(9:16)) + con'*R*con; % calculate obj
+    obj = obj + sqrt((C(k))^2);
     st_next = X(:,k+1);
     f_value = f(st,con);
     st_next_euler = st+ (dt*f_value);
@@ -199,12 +200,13 @@ obj = obj+(st-P(9:16))'*P_weight*(st-P(9:16)); % calculate obj
 % f_bar = f(tau)/(f(tau)+f(1-tau));
 % Sk = (r_obs+2)^2;
 P_lyap = eye(8);
-alpha = 1.1;
+alpha = 0.1;
+Sensing_region = 3;
 for k = 1:N
     st = X(:,k);
     con = U(:,k);
     hk = (st(1)-x_obs_1)^2 + (st(2)-y_obs_1)^2 + (st(3)-z_obs_1)^2 - r_obs_1^2;
-    Sk = (st(1)-x_obs_1)^2 + (st(2)-y_obs_1)^2 + (st(3)-z_obs_1)^2 - (r_obs_1+1)^2 ;
+    Sk = (st(1)-x_obs_1)^2 + (st(2)-y_obs_1)^2 + (st(3)-z_obs_1)^2 - (r_obs_1+Sensing_region)^2 ;
     temp1 = hk / (hk-Sk);
     f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
     Phi = f_bar1;
@@ -214,7 +216,7 @@ for k = 1:N
     st_next = X(:,k+1);
     % con_next = U(:,k+1);
     hk_next = (st_next(1)-x_obs_1)^2 + (st_next(2)-y_obs_1)^2 + (st_next(3)-z_obs_1)^2 - r_obs_1^2;
-    Sk_next = (st_next(1)-x_obs_1)^2 + (st_next(2)-y_obs_1)^2 + (st_next(3)-z_obs_1)^2 - (r_obs_1+1)^2 ;
+    Sk_next = (st_next(1)-x_obs_1)^2 + (st_next(2)-y_obs_1)^2 + (st_next(3)-z_obs_1)^2 - (r_obs_1+Sensing_region)^2 ;
     temp2 = hk_next/(hk_next-Sk_next);
     f_bar2 = if_else(temp2 > 0, exp(-1/temp2), 0)/(if_else(temp2 > 0, exp(-1/temp2), 0) + if_else(1-temp2 > 0, exp(-1/(1-temp2)), 0));
     Phi_next = f_bar2;
@@ -230,7 +232,7 @@ for k = 1:N
     % C2_1 = Dive_G_1(st);
 
 
-    g = [g; rho_next - rho + dt*C1];
+    g = [g; rho_next - rho + +dt*C1 - dt*C(k)*rho + dt*n_states*rho];
 
 end
 
@@ -239,7 +241,7 @@ P_lyap = eye(8);
 for k = 1:N
     st = X(:,k);
     hk = (st(1)-x_obs_2)^2 + (st(2)-y_obs_2)^2 + (st(3)-z_obs_2)^2 - r_obs_2^2;
-    Sk = (st(1)-x_obs_2)^2 + (st(2)-y_obs_2)^2 + (st(3)-z_obs_2)^2 - (r_obs_2+1)^2 ;
+    Sk = (st(1)-x_obs_2)^2 + (st(2)-y_obs_2)^2 + (st(3)-z_obs_2)^2 - (r_obs_2+Sensing_region)^2 ;
     temp1 = hk / (hk-Sk);
     f_bar1 = if_else(temp1 > 0, exp(-1/temp1), 0)/(if_else(temp1 > 0, exp(-1/temp1), 0) + if_else(1-temp1 > 0, exp(-1/(1-temp1)), 0));
     Phi = f_bar1;
@@ -248,7 +250,7 @@ for k = 1:N
 
     st_next = X(:,k+1);
     hk_next = (st_next(1)-x_obs_2)^2 + (st_next(2)-y_obs_2)^2 + (st_next(3)-z_obs_2)^2 - r_obs_2^2;
-    Sk_next = (st_next(1)-x_obs_2)^2 + (st_next(2)-y_obs_2)^2 + (st_next(3)-z_obs_2)^2 - (r_obs_2+1)^2 ;
+    Sk_next = (st_next(1)-x_obs_2)^2 + (st_next(2)-y_obs_2)^2 + (st_next(3)-z_obs_2)^2 - (r_obs_2+Sensing_region)^2 ;
     temp2 = hk_next/(hk_next-Sk_next);
     f_bar2 = if_else(temp2 > 0, exp(-1/temp2), 0)/(if_else(temp2 > 0, exp(-1/temp2), 0) + if_else(1-temp2 > 0, exp(-1/(1-temp2)), 0));
     Phi_next = f_bar2;
@@ -262,7 +264,7 @@ for k = 1:N
     % C2_1 = Dive_G_1(st);
 
 
-    g = [g; rho_next - rho + dt*C1];
+    g = [g; rho_next - rho + dt*C1 - dt*C(k)*rho + dt*n_states*rho];
     
 end
 
@@ -271,7 +273,7 @@ end
 
 
 % make the decision variable one column  vector
-OPT_variables = [reshape(X,8*(N+1),1);reshape(U,4*N,1)];
+OPT_variables = [reshape(X,8*(N+1),1);reshape(U,4*N,1);reshape(C,N,1)];
 nlp_prob = struct('f', obj, 'x', OPT_variables, 'g', g, 'p', P);
 
 opts = struct;
@@ -316,7 +318,8 @@ args.ubx(8*(N+1)+3:4:8*(N+1)+4*N,1) = umax(3); %q upper bound
 args.lbx(8*(N+1)+4:4:8*(N+1)+4*N,1) = umin(4); %r lower bound
 args.ubx(8*(N+1)+4:4:8*(N+1)+4*N,1) = umax(4); %r upper bound
 
-
+args.lbx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = 0; %C lower bound
+args.ubx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = inf; %C upper bound
 
 
 %% Simulation
@@ -328,20 +331,22 @@ t(1) = t0;
 
 u0 = zeros(N,4);
 X0 = repmat(x0,1,N+1)';
+C_0 = repmat(C_t,1,N);
 
 % Start MPC
 mpciter = 0;
 xx1 = [];
 u_cl=[];
+C_log = [];
 
 tic
 while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     args.p   = [x0;xf]; % set the values of the parameters vector
     % initial value of the optimization variables
-    args.x0  = [reshape(X0',8*(N+1),1);reshape(u0',4*N,1)];
+    args.x0  = [reshape(X0',8*(N+1),1);reshape(u0',4*N,1);reshape(C_0',N,1)];
     sol = solver('x0', args.x0, 'lbx', args.lbx, 'ubx', args.ubx,...
         'lbg', args.lbg, 'ubg', args.ubg,'p',args.p);
-    u = reshape(full(sol.x(8*(N+1)+1:end))',4,N)'; % get controls only from the solution
+    u = reshape(full(sol.x(8*(N+1)+1:end-10))',4,N)'; % get controls only from the solution
     xx1(:,1:8,mpciter+1)= reshape(full(sol.x(1:8*(N+1)))',8,N+1)'; % get solution TRAJECTORY
     u_cl= [u_cl ; u(1,:)];
     t(mpciter+1) = t0;
@@ -349,6 +354,8 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     [t0, x0, u0] = shift(dt, t0, x0, u,f);
     xlog(:,mpciter+1) = x0;
     X0 = reshape(full(sol.x(1:8*(N+1)))',8,N+1)'; % get solution TRAJECTORY
+    C_0 = reshape(full(sol.x(end-10+1:end))',1,N);
+    C_log = [C_log; C_0];
     % Shift trajectory to initialize the next step
     X0 = [X0(2:end,:);X0(end,:)];
     mpciter
