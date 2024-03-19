@@ -293,16 +293,15 @@ F = findall(0,'type','figure','tag','TMWWaitbar');
 delete(F);
 
 %% ---------------- plot 3D trajectory ----------------------  
-Line_width = 2;
-Line_color = 'black';
-
 % plot x-y-z trajecotry
 figure(1)
-plot3(xlog(1,:), xlog(2,:), xlog(3,:),'LineWidth', Line_width,'Color','red')
+plot3(xlog(1,:), xlog(2,:), xlog(3,:),'LineWidth', 2,'Color',red)
 xlabel('x(m)','interpreter','latex','FontSize',20);
 ylabel('y(m)','interpreter','latex','FontSize',20);
 zlabel('z(m)','interpreter','latex','FontSize',20);
 hold on
+% plot target in green
+plot3(xf(1), xf(2), xf(3), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
 
 % plot obstacles
 [x_pts,y_pts,z_pts] = sphere(20);
@@ -314,7 +313,18 @@ for obs_num=1:num_obs
     s.EdgeColor = 'none';
     s.FaceAlpha = 0.6;
 end
-    
+colormap gray
+
+% set other axis properties
+axis equal
+grid on;
+xlabel('$x_1$','interpreter','latex', 'FontSize', 20);
+ylabel('$x_2$','interpreter','latex', 'FontSize', 20);
+zlabel('$x_3$','interpreter','latex', 'FontSize', 20);
+xlim([-5 5])
+ylim([-1 10])
+zlim([0 10])
+
 
 %% -------------- plots vs time ---------------------------
 % % plot states vs time
