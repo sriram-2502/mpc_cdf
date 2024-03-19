@@ -26,7 +26,6 @@ r = SX.sym('r');
 controls = [u;v;w;r];
 n_controls = length(controls);
 
-
 %---------- MPC setup ----------------------
 time_total = 10; % time for the total steps, equal to tsim
 dt = 0.02;
@@ -121,6 +120,7 @@ constraints = [];  % constraints vector
 st  = X(:,1); % initial state
 constraints = [constraints;st-P(1:8)]; % initial condition constraints
 
+%------------- Compute cost and constriants -------------------------
 % compute running cost and dynamics constraint
 for k = 1:N
     st = X(:,k);
@@ -173,6 +173,7 @@ for k = 1:N
     constraints = [constraints; density_constraint - slack];
 end
 
+%------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
 OPT_variables = [reshape(X,8*(N+1),1);reshape(U,4*N,1);reshape(C,N,1)];
 nlp_prob = struct('f', obj, 'x', OPT_variables, 'g', constraints, 'p', P);
@@ -199,6 +200,7 @@ args.lbx(2:8:8*(N+1),1) = xmin(2); %state y lower bound
 args.ubx(2:8:8*(N+1),1) = xmax(2); %state y upper bound
 args.lbx(3:8:8*(N+1),1) = xmin(3); %state z lower bound
 args.ubx(3:8:8*(N+1),1) = xmax(3); %state z upper bound
+
 args.lbx(4:8:8*(N+1),1) = xmin(4); %state psi lower bound
 args.ubx(4:8:8*(N+1),1) = xmax(4); %state psi upper bound
 args.lbx(5:8:8*(N+1),1) = xmin(5); %state xdot lower bound
@@ -223,12 +225,10 @@ args.lbx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = 0; %C lower bound
 args.ubx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = inf; %C upper bound
 
 
-%% Simulation
+%% Simulate MPC controller with AUV dynamics
 t0 = 0;
-
 xlog(:,1) = x0; % xx contains the history of states
 t(1) = t0;
-
 u0 = zeros(N,4);
 X0 = repmat(x0,1,N+1)';
 C_0 = repmat(C_t,1,N);
@@ -239,8 +239,12 @@ xx1 = [];
 u_cl=[];
 C_log = [];
 
-tic
+w_bar = waitbar(0,'1','Name','Simulating MPC-CDF...',...
+    'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
 while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
+    max_iter = time_total/dt;
+    waitbar(mpciter/max_iter,w_bar,sprintf(string(mpciter)+'/'+string(max_iter)))
+    
     args.p   = [x0;xf]; % set the values of the parameters vector
     % initial value of the optimization variables
     args.x0  = [reshape(X0',8*(N+1),1);reshape(u0',4*N,1);reshape(C_0',N,1)];
@@ -258,16 +262,37 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     C_log = [C_log; C_0];
     % Shift trajectory to initialize the next step
     X0 = [X0(2:end,:);X0(end,:)];
-    mpciter
     mpciter = mpciter + 1;
 end
-toc
+
+F = findall(0,'type','figure','tag','TMWWaitbar');
+delete(F);
 
 %% plots 
 Line_width = 2;
 Line_color = 'black';
 
-figure
+% plot x-y-z trajecotry
+figure(1)
+plot3(xlog(1,:), xlog(2,:), xlog(3,:),'LineWidth', Line_width,'Color','red')
+xlabel('x(m)','interpreter','latex','FontSize',20);
+ylabel('y(m)','interpreter','latex','FontSize',20);
+zlabel('z(m)','interpreter','latex','FontSize',20);
+hold on
+
+% plot obstacles
+[X,Y,Z] = sphere;
+% obs1
+x_obs1 = obs1(1); y_obs1 = obs1(2);
+z_obs1 = obs1(3); r_obs1 = obs1(4);
+surf(r_obs1*(X)+x_obs1,r_obs1*(Y)+y_obs1,r_obs1*(Z)+z_obs1)
+%obs2
+x_obs2 = obs2(1); y_obs2 = obs2(2);
+z_obs2 = obs2(3); r_obs2 = obs2(4);
+surf(r_obs2*(X)+x_obs2,r_obs2*(Y)+y_obs2,r_obs2*(Z)+z_obs2)
+
+% plot states vs time
+figure(2)
 hold on
 subplot(2,2,1);
 plot(linspace(0, time_total, length(xlog) ), xlog(1,:),...
@@ -296,7 +321,8 @@ plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(4,:),...
 xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
 ylabel('$\psi(deg)$','interpreter','latex','FontSize',10);
 
-figure
+% plots controls1 vs time
+figure(3)
 hold on
 subplot(2,2,1);
 hold on
@@ -326,7 +352,8 @@ plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(8,:),...
 xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
 ylabel('$r(rad/s)$','interpreter','latex','FontSize',10);
 
-figure
+% controls2 vs time
+figure(4)
 hold on
 subplot(2,2,1);
 plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,1),...
@@ -354,28 +381,3 @@ plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,4),...
     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
 xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
 ylabel('$\tau_{yaw}(N.m)$','interpreter','latex','FontSize',10);
-% sgtitle('Control Inputs')
-
-
-figure
-% hold on
-plot3(xlog(1,:), xlog(2,:), xlog(3,:),'LineWidth', Line_width,'Color','red')
-xlabel('x(m)','interpreter','latex','FontSize',20);
-ylabel('y(m)','interpreter','latex','FontSize',20);
-zlabel('z(m)','interpreter','latex','FontSize',20);
-hold on
-[X,Y,Z] = sphere;
-% 
-x_obs1 = obs1(1); y_obs1 = obs1(2);
-z_obs1 = obs1(3); r_obs1 = obs1(4);
-surf(r_obs1*(X)+x_obs1,r_obs1*(Y)+y_obs1,r_obs1*(Z)+z_obs1)
-
-x_obs2 = obs2(1); y_obs2 = obs2(2);
-z_obs2 = obs2(3); r_obs2 = obs2(4);
-surf(r_obs2*(X)+x_obs2,r_obs2*(Y)+y_obs2,r_obs2*(Z)+z_obs2)
-
-%%
-F_values = [];
-for i=1:length(xlog)
-    F_values = [F_values;div_f_discrete(xlog(:,i))];
-end
