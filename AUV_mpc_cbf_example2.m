@@ -1,6 +1,6 @@
 clc;
 clear;
-close all;
+% close all;
 import casadi.*
 addpath dynamics\ density_functions\ barrier_functions\
 
@@ -42,7 +42,7 @@ Q = 10*diag([10,10,10, 10, o, o, o, o]);
 P_weight = 100*diag([10,10,10,10, o, o, o, o]);
 R = 1*diag([1, 1, 1, 1]);
 N = 10;
-gamma =0.1;
+gamma = 0.1; % cbf decay rate
 
 xmin = [-inf; -inf; -inf;-100; -100; -100; -100; -100];
 xmax = -xmin;
@@ -64,9 +64,9 @@ obs = [obs_x;obs_y;obs_z;obs_r;obs_s];
 
 % obstacle list for complex 3D world
 num_obs = 4; % Number of obstacles
-obs_toros_xy = [0;0;0;2;3];
+obs_toros_xy = [0;0;2;2;3];
 obs_toros_xz = [8;0;0;1;2];
-obs_cylinder = [0;-3;0;2;3];
+obs_cylinder = [-3;0;0;2;3];
 obs_sphere = [0;-6;-4;3;4];
 
 % ------------ Density function setup ------------
@@ -88,33 +88,6 @@ b_sphere = Function('b',{states,obs},{b_sphere});
 [dx_dt,f,g] = AUV_dynamics(states, controls, dt);
 f_discrete = dt*f + states;
 g_discrete = dt*g;
-
-% define matlab functions for divergence of f_discrete
-jacob_f_discrete = jacobian(f_discrete, states');
-div_f_discrete = sum(diag(jacob_f_discrete));
-div_f_discrete = Function('Div_F',{states},{div_f_discrete});
-
-% define matlab functions for divergence of g_discrete for each column
-g_discrete1 = g_discrete(:,1);
-jacob_G_discrete1 = jacobian(g_discrete1, states');
-div_g_discrete1 = sum(diag(jacob_G_discrete1));
-
-g_discrete2 = g_discrete(:,2);
-jacob_g_discrete2 = jacobian(g_discrete2, states');
-div_g_discrete2 = sum(diag(jacob_g_discrete2));
-
-g_discrete3 = g_discrete(:,3);
-jacob_g_discrete3 = jacobian(g_discrete3, states');
-div_g_discrete3 = sum(diag(jacob_g_discrete3));
-
-g_discrete4 = g_discrete(:,4);
-jacob_g_discrete4 = jacobian(g_discrete4, states');
-div_g_discrete4 = sum(diag(jacob_g_discrete4));
-
-% calculate the total divergence of g_discrete
-div_g_discrete = div_g_discrete1+div_g_discrete2+div_g_discrete3+div_g_discrete4;
-div_g_discrete = Function('div_G_discrete1',{states},{div_g_discrete});
-
 
 % define matlab functions for F=f+gu, f, g
 F = Function('F',{states,controls},{dx_dt}); 
@@ -169,7 +142,7 @@ for k = 1:N
     b = b_toros_xy(st,obs_loc);
     b_next = b_toros_xy(st_next,obs_loc);
     
-    % form density constraint
+    % form CBF constraint
     CBF_constraint = b_next - b  + gamma*b;
     constraints = [constraints; CBF_constraint];
 end
@@ -188,7 +161,7 @@ for k = 1:N
     b = b_toros_xz(st,obs_loc);
     b_next = b_toros_xz(st_next,obs_loc);
     
-    % form density constraint
+    % form CBF constraint
     CBF_constraint = b_next - b  + gamma*b;
 
     constraints = [constraints; CBF_constraint];
@@ -208,7 +181,7 @@ for k = 1:N
     b = b_cylinder(st,obs_loc);
     b_next = b_cylinder(st_next,obs_loc);
     
-    % form density constraint
+    % form CBF constraint
     CBF_constraint = b_next - b  + gamma*b;
 
     constraints = [constraints; CBF_constraint];
@@ -228,7 +201,7 @@ for k = 1:N
     b = b_sphere(st,obs_loc);
     b_next = b_sphere(st_next,obs_loc);
     
-    % form density constraint
+    % form CBF constraint
     CBF_constraint = b_next - b  + gamma*b;
 
     constraints = [constraints; CBF_constraint];
@@ -297,7 +270,6 @@ X0 = repmat(x0,1,N+1)';
 mpciter = 0;
 xx1 = [];
 u_cl=[];
-
 
 w_bar = waitbar(0,'1','Name','Simulating MPC-CDF...',...
     'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');

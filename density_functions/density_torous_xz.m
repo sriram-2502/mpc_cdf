@@ -1,4 +1,4 @@
-function rho = density_torous_xz(states)
+function rho = density_torous_xz(states, obs)
 % Inputs 
 % states    : [x; y; z; psi; xdot; ydot; zdot; psidot] -> casadi variables;
 % outputs

@@ -64,9 +64,9 @@ obs = [obs_x;obs_y;obs_z;obs_r;obs_s];
 
 % obstacle list for complex 3D world
 num_obs = 4; % Number of obstacles
-obs_toros_xy = [0;0;0;2;3];
+obs_toros_xy = [0;0;2;2;3];
 obs_toros_xz = [8;0;0;1;2];
-obs_cylinder = [0;-3;0;2;3];
+obs_cylinder = [-3;0;0;2;3];
 obs_sphere = [0;-6;-4;3;4];
 
 % ------------ Density function setup ------------
@@ -340,13 +340,12 @@ F = findall(0,'type','figure','tag','TMWWaitbar');
 delete(F);
 
 %% ---------------- plot 3D trajectory ----------------------  
-% plot x-y-z trajecotry
+
 figure(1)
-plot3(xlog(1,:), xlog(2,:), xlog(3,:),'LineWidth', 2,'Color',red)
-xlabel('x(m)','interpreter','latex','FontSize',20);
-ylabel('y(m)','interpreter','latex','FontSize',20);
-zlabel('z(m)','interpreter','latex','FontSize',20);
-hold on
+
+% plot start, goal
+plot3(x_ini(1), x_ini(2), x_ini(3), 'o', 'MarkerSize', 10, 'MarkerFaceColor', 'black', 'MarkerEdgeColor','black'); hold on;
+plot3(xf(1), xf(2), xf(3), 'o', 'MarkerSize', 10, 'MarkerFaceColor', green, 'MarkerEdgeColor', green); hold on;
 
 % plot obstacles
 % plot torus in xy
@@ -385,13 +384,14 @@ surf(X+obs_sphere(1),Y+obs_sphere(2),Z+obs_sphere(3)); hold on
 axis equal
 
 colormap gray
-% plot start, goal
-plot3(x_ini(1), x_ini(2), x_ini(3), 'o', 'MarkerSize', 10, 'MarkerFaceColor', 'black', 'MarkerEdgeColor','black'); hold on;
-plot3(xf(1), xf(2), xf(3), 'o', 'MarkerSize', 10, 'MarkerFaceColor', green, 'MarkerEdgeColor', green); hold on;
 
+% plot x-y-z trajecotry
+plot3(xlog(1,:), xlog(2,:), xlog(3,:),'LineWidth', 2,'Color',red)
+hold on
 
 % Set the remaining axes properties
-view([45,25]);
+view([-23 16]);
+% view([45,25]);
 axes1 = gca;
 box(axes1,'on');
 axis(axes1,'square');
