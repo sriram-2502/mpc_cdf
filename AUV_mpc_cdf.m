@@ -2,7 +2,7 @@ clc;
 clear;
 close all;
 import casadi.*
-addpath dynamics\ density_functions\
+addpath dynamics\ density_functions\ barrier_functions\
 
 %% Setup Parameters
 % ---------- system setup ---------------
@@ -175,12 +175,12 @@ end
 
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
-OPT_variables = [reshape(X,8*(N+1),1);reshape(U,4*N,1);reshape(C,N,1)];
+OPT_variables = [reshape(X,n_states*(N+1),1);reshape(U,n_controls*N,1);reshape(C,N,1)];
 nlp_prob = struct('f', obj, 'x', OPT_variables, 'g', constraints, 'p', P);
 
 opts = struct;
 opts.ipopt.max_iter = 100;
-opts.ipopt.print_level =0;%0,3
+opts.ipopt.print_level =0;
 opts.print_time = 0;
 opts.ipopt.acceptable_tol =1e-8;
 opts.ipopt.acceptable_obj_change_tol = 1e-6;
@@ -188,48 +188,48 @@ opts.ipopt.acceptable_obj_change_tol = 1e-6;
 solver = nlpsol('solver', 'ipopt', nlp_prob,opts);
 
 args = struct;
-args.lbg(1:8*(N+1)) = 0; % equality constraints
-args.ubg(1:8*(N+1)) = 0; % equality constraints
+args.lbg(1:n_states*(N+1)) = 0; % equality constraints
+args.ubg(1:n_states*(N+1)) = 0; % equality constraints
 
-args.lbg(8*(N+1)+1 : 8*(N+1)+ (2*N)) = 0; % inequality constraints
-args.ubg(8*(N+1)+1 : 8*(N+1)+ (2*N)) = inf; % inequality constraints
+args.lbg(n_states*(N+1)+1 : n_states*(N+1)+ (2*N)) = 0; % inequality constraints
+args.ubg(n_states*(N+1)+1 : n_states*(N+1)+ (2*N)) = inf; % inequality constraints
 
-args.lbx(1:8:8*(N+1),1) = xmin(1); %state x lower bound
-args.ubx(1:8:8*(N+1),1) = xmax(1); %state x upper bound
-args.lbx(2:8:8*(N+1),1) = xmin(2); %state y lower bound
-args.ubx(2:8:8*(N+1),1) = xmax(2); %state y upper bound
-args.lbx(3:8:8*(N+1),1) = xmin(3); %state z lower bound
-args.ubx(3:8:8*(N+1),1) = xmax(3); %state z upper bound
+args.lbx(1:n_states:n_states*(N+1),1) = xmin(1); %state x lower bound
+args.ubx(1:n_states:n_states*(N+1),1) = xmax(1); %state x upper bound
+args.lbx(2:n_states:n_states*(N+1),1) = xmin(2); %state y lower bound
+args.ubx(2:n_states:n_states*(N+1),1) = xmax(2); %state y upper bound
+args.lbx(3:n_states:n_states*(N+1),1) = xmin(3); %state z lower bound
+args.ubx(3:n_states:n_states*(N+1),1) = xmax(3); %state z upper bound
 
-args.lbx(4:8:8*(N+1),1) = xmin(4); %state psi lower bound
-args.ubx(4:8:8*(N+1),1) = xmax(4); %state psi upper bound
-args.lbx(5:8:8*(N+1),1) = xmin(5); %state xdot lower bound
-args.ubx(5:8:8*(N+1),1) = xmax(5); %state xdot upper bound
-args.lbx(6:8:8*(N+1),1) = xmin(6); %state ydot lower bound
-args.ubx(6:8:8*(N+1),1) = xmax(6); %state ydot upper bound
-args.lbx(7:8:8*(N+1),1) = xmin(7); %state zdot lower bound
-args.ubx(7:8:8*(N+1),1) = xmax(7); %state zdot upper bound
-args.lbx(8:8:8*(N+1),1) = xmin(8); %state psidot lower bound
-args.ubx(8:8:8*(N+1),1) = xmax(8); %state psidot upper bound
+args.lbx(4:n_states:n_states*(N+1),1) = xmin(4); %state psi lower bound
+args.ubx(4:n_states:n_states*(N+1),1) = xmax(4); %state psi upper bound
+args.lbx(5:n_states:n_states*(N+1),1) = xmin(5); %state xdot lower bound
+args.ubx(5:n_states:n_states*(N+1),1) = xmax(5); %state xdot upper bound
+args.lbx(6:n_states:n_states*(N+1),1) = xmin(6); %state ydot lower bound
+args.ubx(6:n_states:n_states*(N+1),1) = xmax(6); %state ydot upper bound
+args.lbx(7:n_states:n_states*(N+1),1) = xmin(7); %state zdot lower bound
+args.ubx(7:n_states:n_states*(N+1),1) = xmax(7); %state zdot upper bound
+args.lbx(8:n_states:n_states*(N+1),1) = xmin(8); %state psidot lower bound
+args.ubx(8:n_states:n_states*(N+1),1) = xmax(8); %state psidot upper bound
 
-args.lbx(8*(N+1)+1:4:8*(N+1)+4*N,1) = umin(1); %u lower bound
-args.ubx(8*(N+1)+1:4:8*(N+1)+4*N,1) = umax(1); %u upper bound
-args.lbx(8*(N+1)+2:4:8*(N+1)+4*N,1) = umin(2); %p lower bound
-args.ubx(8*(N+1)+2:4:8*(N+1)+4*N,1) = umax(2); %p upper bound
-args.lbx(8*(N+1)+3:4:8*(N+1)+4*N,1) = umin(3); %q lower bound
-args.ubx(8*(N+1)+3:4:8*(N+1)+4*N,1) = umax(3); %q upper bound
-args.lbx(8*(N+1)+4:4:8*(N+1)+4*N,1) = umin(4); %r lower bound
-args.ubx(8*(N+1)+4:4:8*(N+1)+4*N,1) = umax(4); %r upper bound
+args.lbx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umin(1); %u lower bound
+args.ubx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umax(1); %u upper bound
+args.lbx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umin(2); %p lower bound
+args.ubx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umax(2); %p upper bound
+args.lbx(n_states*(N+1)+3:n_controls:n_states*(N+1)+n_controls*N,1) = umin(3); %q lower bound
+args.ubx(n_states*(N+1)+3:n_controls:n_states*(N+1)+n_controls*N,1) = umax(3); %q upper bound
+args.lbx(n_states*(N+1)+4:n_controls:n_states*(N+1)+n_controls*N,1) = umin(4); %r lower bound
+args.ubx(n_states*(N+1)+4:n_controls:n_states*(N+1)+n_controls*N,1) = umax(4); %r upper bound
 
-args.lbx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = 0; %C lower bound
-args.ubx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = inf; %C upper bound
+args.lbx(n_states*(N+1)+n_controls*N+1:1:n_states*(N+1)+n_controls*N+N,1) = 0; %C lower bound
+args.ubx(n_states*(N+1)+n_controls*N+1:1:n_states*(N+1)+n_controls*N+N,1) = inf; %C upper bound
 
 
 %% Simulate MPC controller with AUV dynamics
 t0 = 0;
 xlog(:,1) = x0; % xx contains the history of states
 t(1) = t0;
-u0 = zeros(N,4);
+u0 = zeros(N,n_controls);
 X0 = repmat(x0,1,N+1)';
 C_0 = repmat(C_t,1,N);
 
@@ -241,25 +241,29 @@ C_log = [];
 
 w_bar = waitbar(0,'1','Name','Simulating MPC-CDF...',...
     'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
+
 while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     max_iter = time_total/dt;
     waitbar(mpciter/max_iter,w_bar,sprintf(string(mpciter)+'/'+string(max_iter)))
     
     args.p   = [x0;xf]; % set the values of the parameters vector
+
     % initial value of the optimization variables
-    args.x0  = [reshape(X0',8*(N+1),1);reshape(u0',4*N,1);reshape(C_0',N,1)];
+    args.x0  = [reshape(X0',n_states*(N+1),1);reshape(u0',n_controls*N,1);reshape(C_0',N,1)];
     sol = solver('x0', args.x0, 'lbx', args.lbx, 'ubx', args.ubx,...
         'lbg', args.lbg, 'ubg', args.ubg,'p',args.p);
-    u = reshape(full(sol.x(8*(N+1)+1:end-10))',4,N)'; % get controls only from the solution
-    xx1(:,1:8,mpciter+1)= reshape(full(sol.x(1:8*(N+1)))',8,N+1)'; % get solution TRAJECTORY
+    u = reshape(full(sol.x(n_states*(N+1)+1:end-10))',n_controls,N)'; % get controls only from the solution
+    xx1(:,1:n_states,mpciter+1)= reshape(full(sol.x(1:n_states*(N+1)))',n_states,N+1)'; % get solution TRAJECTORY
     u_cl= [u_cl ; u(1,:)];
     t(mpciter+1) = t0;
+
     % Apply the control and shift the solution
     [t0, x0, u0] = shift(dt, t0, x0, u,F);
     xlog(:,mpciter+1) = x0;
-    X0 = reshape(full(sol.x(1:8*(N+1)))',8,N+1)'; % get solution TRAJECTORY
+    X0 = reshape(full(sol.x(1:n_states*(N+1)))',n_states,N+1)'; % get solution TRAJECTORY
     C_0 = reshape(full(sol.x(end-10+1:end))',1,N);
     C_log = [C_log; C_0];
+
     % Shift trajectory to initialize the next step
     X0 = [X0(2:end,:);X0(end,:)];
     mpciter = mpciter + 1;
