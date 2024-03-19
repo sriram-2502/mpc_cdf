@@ -42,7 +42,7 @@ Q = 10*diag([10,10,10, 10, o, o, o, o]);
 P_weight = 100*diag([10,10,10,10, o, o, o, o]);
 R = 1*diag([1, 1, 1, 1]);
 N = 10;
-
+gamma =0.5;
 
 xmin = [-inf; -inf; -inf;-100; -100; -100; -100; -100];
 xmax = -xmin;
@@ -51,9 +51,9 @@ umin = [-inf; -inf; -inf; -inf];
 umax = -umin;
 
 % ----------- Environment setup --------------------
-x0 = [10; 10; 10; 2; 0; 0; 0; 0]; % initial Condition
-xf = [0; 0; 0; 0; 0; 0; 0; 0]; % target
-gamma =0.5;
+x0 = [0; -10; -8; 0; 0; 0; 0; 0]; % initial
+x_ini = x0;
+xf = [4; 4; 8; 0; 0; 0; 0; 0]; % target
 
 obs_x = SX.sym('obs_x');
 obs_y = SX.sym('obs_y');
@@ -62,17 +62,26 @@ obs_r = SX.sym('obs_r');
 obs_s = SX.sym('obs_s');
 obs = [obs_x;obs_y;obs_z;obs_r;obs_s];
 
-num_obs = 2; % Number of obstacles
-obs_rad = [1; 1.5];
-obs_sens =[3; 3];
-
-% obstalce locations
-obs1 = [8;8;8.5;obs_rad(1);obs_sens(1)];
-obs2 = [3.2;4.1;3.5;obs_rad(2);obs_sens(2)];
+% obstacle list for complex 3D world
+num_obs = 4; % Number of obstacles
+obs_toros_xy = [0;0;0;2;3];
+obs_toros_xz = [8;0;0;1;2];
+obs_cylinder = [0;-3;0;2;3];
+obs_sphere = [0;-6;-4;3;4];
 
 % ------------ Density function setup ------------
-b_sphere = CBF_sphere(states,obs);
+b_toros_xy = CBF_sphere(states,obs_toros_xy);
+b_toros_xy = Function('b',{states,obs},{b_toros_xy});
+
+b_toros_xz = CBF_sphere(states,obs_toros_xz);
+b_toros_xz = Function('b',{states,obs},{b_toros_xz}); 
+
+b_cylinder = CBF_sphere(states,obs_cylinder);
+b_cylinder = Function('b',{states,obs},{b_cylinder}); 
+
+b_sphere = CBF_sphere(states,obs_sphere);
 b_sphere = Function('b',{states,obs},{b_sphere}); 
+
 
 
 %% Dynamics Setup 
@@ -146,26 +155,85 @@ st = X(:,k);
 obj = obj+(st-P(9:16))'*P_weight*(st-P(9:16)); % calculate obj
 
 % density constraint for obstacles
-for obs_num = 1:num_obs
-    for k = 1:N
-        % get current and next state
-        st = X(:,k); st_next = X(:,k+1);
-        % get current control
-        con = U(:,k);
+% add toros in xy
+for k = 1:N
+    % get current and next state
+    st = X(:,k); st_next = X(:,k+1);
+    % get current control
+    con = U(:,k);
 
-        % get obs location
-        obs_loc = eval(sprintf('obs%d',obs_num));
+    % get obs location
+    obs_loc = obs_toros_xy;
 
-        % get current and next b(barrier)
-        b = b_sphere(st,obs_loc);
-        b_next =b_sphere(st_next,obs_loc);
-        
-        % form CBF constraint
-        CBF_constraint = b_next - b  + gamma*b;
-        % slack = dt*C(k)*rho;
-        constraints = [constraints; CBF_constraint];
-    end
+    % get current and next rho
+    b = b_toros_xy(st,obs_loc);
+    b_next = b_toros_xy(st_next,obs_loc);
+    
+    % form density constraint
+    CBF_constraint = b_next - b  + gamma*b;
+    constraints = [constraints; CBF_constraint];
 end
+
+% add toros in xz
+for k = 1:N
+    % get current and next state
+    st = X(:,k); st_next = X(:,k+1);
+    % get current control
+    con = U(:,k);
+
+    % get obs location
+    obs_loc = obs_toros_xz;
+
+    % get current and next rho
+    b = b_toros_xz(st,obs_loc);
+    b_next = b_toros_xz(st_next,obs_loc);
+    
+    % form density constraint
+    CBF_constraint = b_next - b  + gamma*b;
+
+    constraints = [constraints; CBF_constraint];
+end
+
+% add cylinder
+for k = 1:N
+    % get current and next state
+    st = X(:,k); st_next = X(:,k+1);
+    % get current control
+    con = U(:,k);
+
+    % get obs location
+    obs_loc = obs_cylinder;
+
+    % get current and next rho
+    b = b_cylinder(st,obs_loc);
+    b_next = b_cylinder(st_next,obs_loc);
+    
+    % form density constraint
+    CBF_constraint = b_next - b  + gamma*b;
+
+    constraints = [constraints; CBF_constraint];
+end
+
+% add sphere
+for k = 1:N
+    % get current and next state
+    st = X(:,k); st_next = X(:,k+1);
+    % get current control
+    con = U(:,k);
+
+    % get obs location
+    obs_loc = obs_sphere;
+
+    % get current and next rho
+    b = b_sphere(st,obs_loc);
+    b_next = b_sphere(st_next,obs_loc);
+    
+    % form density constraint
+    CBF_constraint = b_next - b  + gamma*b;
+
+    constraints = [constraints; CBF_constraint];
+end
+
 
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
@@ -184,6 +252,7 @@ solver = nlpsol('solver', 'ipopt', nlp_prob,opts);
 args = struct;
 args.lbg(1:n_states*(N+1)) = 0; % equality constraints
 args.ubg(1:n_states*(N+1)) = 0; % equality constraints
+
 args.lbg(n_states*(N+1)+1 : n_states*(N+1)+ (num_obs*N)) = 0; % inequality constraints
 args.ubg(n_states*(N+1)+1 : n_states*(N+1)+ (num_obs*N)) = inf; % inequality constraints
 
@@ -223,6 +292,7 @@ t(1) = t0;
 u0 = zeros(N,n_controls);
 X0 = repmat(x0,1,N+1)';
 
+
 % Start MPC
 mpciter = 0;
 xx1 = [];
@@ -260,117 +330,158 @@ end
 F = findall(0,'type','figure','tag','TMWWaitbar');
 delete(F);
 
-%% ------------- plot 3D trajectory --------------------------
-Line_width = 2;
-Line_color = 'black';
-
+%% ---------------- plot 3D trajectory ----------------------  
 % plot x-y-z trajecotry
 figure(1)
-plot3(xlog(1,:), xlog(2,:), xlog(3,:),'LineWidth', Line_width,'Color','red')
+plot3(xlog(1,:), xlog(2,:), xlog(3,:),'LineWidth', 2,'Color',red)
 xlabel('x(m)','interpreter','latex','FontSize',20);
 ylabel('y(m)','interpreter','latex','FontSize',20);
 zlabel('z(m)','interpreter','latex','FontSize',20);
 hold on
 
 % plot obstacles
-[x_pts,y_pts,z_pts] = sphere(20);
-for i=1:num_obs
-    obs_loc = eval(sprintf('obs%d',i));
-    s = surf(x_pts*obs_rad(i)+ obs_loc(1), y_pts*obs_rad(i) + obs_loc(2), ...
-        z_pts*obs_rad(i) + obs_loc(3));
-    hold on;
-    s.EdgeColor = 'none';
-    s.FaceAlpha = 0.6;
-end
+% plot torus in xy
+cx = obs_toros_xy(1); cy = obs_toros_xy(2); cz = obs_toros_xy(3); % center
+[theta,phi] = meshgrid(linspace(0,2*pi,25));
+R = 10; r = obs_toros_xy(4);
+x = (R + r*cos(theta)).*cos(phi) + cx;
+y = (R + r*cos(theta)).*sin(phi) + cy;
+z = r*sin(theta) + cz;
+surf(x,y,z); hold on
+axis equal
 
-%% --------------- plots vs time ---------------------------------
-% plot states vs time
-figure(2)
-hold on
-subplot(2,2,1);
-plot(linspace(0, time_total, length(xlog) ), xlog(1,:),...
-    'LineWidth',Line_width ,'MarkerSize',4,'Color',Line_color);
-% xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$x(m) $','interpreter','latex','FontSize',10);
+% plot torus in xz
+R = 7; r = obs_toros_xz(4);
+cx = obs_toros_xz(1); cy = obs_toros_xz(2); cz = obs_toros_xz(3);
+x = (R + r*cos(theta)).*cos(phi) + cx;
+z = (R + r*cos(theta)).*sin(phi) + cz;
+y = r*sin(theta) + cy;
+surf(x,y,z); hold on
+axis equal
 
-subplot(2,2,2);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(2,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-% xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$y(m) $','interpreter','latex','FontSize',10);
+%  plot cylinder
+r = 2; h = 40;
+[X,Y,Z] = cylinder(r,20);
+Z = Z*h;
+surf(X+obs_cylinder(1),Y+obs_cylinder(2),Z-20); hold on
+axis equal
 
-subplot(2,2,3);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(3,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$z(m) $','interpreter','latex','FontSize',10);
+% plot shere
+[X,Y,Z] = sphere;
+r = 3;
+X = X*r;
+Y = Y*r;
+Z = Z*r;
+surf(X+obs_sphere(1),Y+obs_sphere(2),Z+obs_sphere(3)); hold on
+axis equal
 
-subplot(2,2,4);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(4,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$\psi(deg)$','interpreter','latex','FontSize',10);
+colormap gray
+% plot start, goal and traj
+plot3(x_ini(1), x_ini(2), x_ini(3), 'o', 'MarkerSize', 10, 'MarkerFaceColor', 'black', 'MarkerEdgeColor','black'); hold on;
+plot3(xf(1), xf(2), xf(3), 'o', 'MarkerSize', 10, 'MarkerFaceColor', green, 'MarkerEdgeColor', green); hold on;
 
-% plots controls1 vs time
-figure(3)
-hold on
-subplot(2,2,1);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(5,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-% xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$u(m/s)$','interpreter','latex','FontSize',10);
 
-subplot(2,2,2);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(6,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-% xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$v(m/s)$','interpreter','latex','FontSize',10);
+% Set the remaining axes properties
+view([45,25]);
+axes1 = gca;
+box(axes1,'on');
+axis(axes1,'square');
+hold(axes1,'off');
+grid on;
+set(axes1,'FontSize',15,'LineWidth',1.5)
+xlabel('$x_1$','interpreter','latex', 'FontSize', 20);
+ylabel('$x_2$','interpreter','latex', 'FontSize', 20);
+zlabel('$x_3$','interpreter','latex', 'FontSize', 20);
 
-subplot(2,2,3);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(7,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$w(m/s)$','interpreter','latex','FontSize',10);
 
-subplot(2,2,4);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(8,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$r(rad/s)$','interpreter','latex','FontSize',10);
-
-% controls2 vs time
-figure(4)
-hold on
-subplot(2,2,1);
-plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,1),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$t (s)$','interpreter','latex','FontSize',20);
-ylabel('$f_{surge}(N)$','interpreter','latex','FontSize',10);
-
-subplot(2,2,2);
-hold on
-plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,2),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+%% -------------- plots vs time ---------------------------
+% % plot states vs time
+% figure(2)
+% hold on
+% subplot(2,2,1);
+% plot(linspace(0, time_total, length(xlog) ), xlog(1,:),...
+%     'LineWidth',Line_width ,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t(s)$','interpreter','latex','FontSize',20);
+% ylabel('$x(m) $','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,2);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(2,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t(s)$','interpreter','latex','FontSize',20);
+% ylabel('$y(m) $','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,3);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(3,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$z(m) $','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,4);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(4,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$\psi(deg)$','interpreter','latex','FontSize',10);
+% 
+% % plots controls1 vs time
+% figure(3)
+% hold on
+% subplot(2,2,1);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(5,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t(s)$','interpreter','latex','FontSize',20);
+% ylabel('$u(m/s)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,2);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(6,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t(s)$','interpreter','latex','FontSize',20);
+% ylabel('$v(m/s)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,3);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(7,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$w(m/s)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,4);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(8,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$r(rad/s)$','interpreter','latex','FontSize',10);
+% 
+% % controls2 vs time
+% figure(4)
+% hold on
+% subplot(2,2,1);
+% plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,1),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
 % xlabel('$t (s)$','interpreter','latex','FontSize',20);
-ylabel('$f_{sway}(N)$','interpreter','latex','FontSize',10);
-
-subplot(2,2,3);
-hold on
-plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,3),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$f_{heave}(N)$','interpreter','latex','FontSize',10);
-
-subplot(2,2,4);
-hold on
-plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,4),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$\tau_{yaw}(N.m)$','interpreter','latex','FontSize',10);
+% ylabel('$f_{surge}(N)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,2);
+% hold on
+% plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,2),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t (s)$','interpreter','latex','FontSize',20);
+% ylabel('$f_{sway}(N)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,3);
+% hold on
+% plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,3),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$f_{heave}(N)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,4);
+% hold on
+% plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,4),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$\tau_{yaw}(N.m)$','interpreter','latex','FontSize',10);

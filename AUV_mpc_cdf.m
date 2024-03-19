@@ -51,7 +51,7 @@ umin = [-inf; -inf; -inf; -inf];
 umax = -umin;
 
 % ----------- Environment setup --------------------
-x0 = [15; 16; 17; 2; 0; 0; 0; 0]; % initial Condition
+x0 = [10; 10; 10; 2; 0; 0; 0; 0]; % initial Condition
 xf = [0; 0; 0; 0; 0; 0; 0; 0]; % target
 
 obs_x = SX.sym('obs_x');
