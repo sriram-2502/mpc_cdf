@@ -1,0 +1,381 @@
+clc;
+clear;
+close all;
+import casadi.*
+addpath dynamics\ density_functions\
+
+%% Setup Parameters
+% ---------- system setup ---------------
+% states for AUV
+x = SX.sym('x');
+y = SX.sym('y');
+z = SX.sym('z');
+psi = SX.sym('psi');
+xdot = SX.sym('xdot');
+ydot = SX.sym('ydot');
+zdot = SX.sym('zdot');
+psidot = SX.sym('psidot');
+states = [x; y; z; psi; xdot; ydot; zdot; psidot];
+n_states = length(states);
+
+% control Inputs for AUV
+u = SX.sym('u');
+v = SX.sym('v');
+w = SX.sym('w');
+r = SX.sym('r');
+controls = [u;v;w;r];
+n_controls = length(controls);
+
+
+%---------- MPC setup ----------------------
+time_total = 10; % time for the total steps, equal to tsim
+dt = 0.02;
+o = 3;
+Q = 10*diag([10,10,10, 10, o, o, o, o]);
+P_weight = 100*diag([10,10,10,10, o, o, o, o]);
+R = 1*diag([1, 1, 1, 1]);
+N = 10;
+C_t = 0.1;
+
+xmin = [-inf; -inf; -inf;-100; -100; -100; -100; -100];
+xmax = -xmin;
+
+umin = [-inf; -inf; -inf; -inf];
+umax = -umin;
+
+% ----------- Environment setup --------------------
+x0 = [15; 16; 17; 2; 0; 0; 0; 0]; % initial Condition
+xf = [0; 0; 0; 0; 0; 0; 0; 0]; % target
+
+obs_x = SX.sym('obs_x');
+obs_y = SX.sym('obs_y');
+obs_z = SX.sym('obs_z');
+obs_r = SX.sym('obs_r');
+obs_s = SX.sym('obs_s');
+obs = [obs_x;obs_y;obs_z;obs_r;obs_s];
+
+%First Obstacle
+obs1 = [8;8;8.5;1;3];
+
+%Second Obstacle
+obs2 = [3.2;4.1;3.5;1.5;3];
+
+% ------------ Density function setup ------------
+rho_sphere = density_sphere(states,obs);
+rho_sphere = Function('rho',{states,obs},{rho_sphere}); 
+
+
+%% Dynamics Setup 
+[dx_dt,f,constraints] = AUV_dynamics(states, controls, dt);
+f_discrete = dt*f + states;
+g_discrete = dt*constraints;
+
+% define matlab functions for divergence of f_discrete
+jacob_f_discrete = jacobian(f_discrete, states');
+div_f_discrete = sum(diag(jacob_f_discrete));
+div_f_discrete = Function('Div_F',{states},{div_f_discrete});
+
+% define matlab functions for divergence of g_discrete for each column
+g_discrete1 = g_discrete(:,1);
+jacob_G_discrete1 = jacobian(g_discrete1, states');
+div_g_discrete1 = sum(diag(jacob_G_discrete1));
+
+g_discrete2 = g_discrete(:,2);
+jacob_g_discrete2 = jacobian(g_discrete2, states');
+div_g_discrete2 = sum(diag(jacob_g_discrete2));
+
+g_discrete3 = g_discrete(:,3);
+jacob_g_discrete3 = jacobian(g_discrete3, states');
+div_g_discrete3 = sum(diag(jacob_g_discrete3));
+
+g_discrete4 = g_discrete(:,4);
+jacob_g_discrete4 = jacobian(g_discrete4, states');
+div_g_discrete4 = sum(diag(jacob_g_discrete4));
+
+% calculate the total divergence of g_discrete
+div_g_discrete = div_g_discrete1+div_g_discrete2+div_g_discrete3+div_g_discrete4;
+div_g_discrete = Function('div_G_discrete1',{states},{div_g_discrete});
+
+
+% define matlab functions for F=f+gu, f, g
+F = Function('F',{states,controls},{dx_dt}); 
+f = Function('f',{states},{f}); 
+constraints = Function('g',{states},{constraints});
+
+%% Casdai MPC setup
+% A vector that represents the states over the optimization problem.
+X = SX.sym('X',n_states,(N+1));
+
+% Decision variables for control
+U = SX.sym('U',n_controls,N); 
+
+% Decision variables for slack
+C = SX.sym('C',N); 
+
+% parameters (which include at the initial state of the robot and the reference state)
+P = SX.sym('P',n_states + n_states);
+
+obj = 0; % Objective function
+constraints = [];  % constraints vector
+
+st  = X(:,1); % initial state
+constraints = [constraints;st-P(1:8)]; % initial condition constraints
+
+% compute running cost and dynamics constraint
+for k = 1:N
+    st = X(:,k);
+    con = U(:,k);
+    obj = obj+(st-P(9:16))'*Q*(st-P(9:16)) + con'*R*con; % calculate obj
+    obj = obj + sqrt((C(k))^2);
+    st_next = X(:,k+1);
+    f_value = F(st,con);
+    st_next_euler = st+ (dt*f_value);
+    constraints = [constraints;st_next-st_next_euler]; % compute constraints
+end
+
+% Add Terminal Cost
+k = N+1;
+st = X(:,k);
+obj = obj+(st-P(9:16))'*P_weight*(st-P(9:16)); % calculate obj
+
+% density constraint for obstacle 1
+for k = 1:N
+    % get current and next state
+    st = X(:,k); st_next = X(:,k+1);
+    % get current control
+    con = U(:,k);
+    
+    % get current and next rho
+    rho = rho_sphere(st,obs1);
+    rho_next = rho_sphere(st_next,obs1);
+    
+    % form density constraint
+    density_constraint = (rho_next-rho) + dt*(div_f_discrete(st)+div_g_discrete(st))*rho;
+    slack = dt*C(k)*rho;
+    constraints = [constraints; density_constraint - slack];
+
+end
+
+% density constraint for obstacle 2
+for k = 1:N
+    % get current and next state
+    st = X(:,k); st_next = X(:,k+1);
+    % get current control
+    con = U(:,k);
+    
+    % get current and next rho
+    rho = rho_sphere(st,obs2);
+    rho_next = rho_sphere(st_next,obs2);
+    
+    % form density constraint
+    density_constraint = (rho_next-rho) + dt*(div_f_discrete(st)+div_g_discrete(st))*rho;
+    slack = dt*C(k)*rho;
+    constraints = [constraints; density_constraint - slack];
+end
+
+% make the decision variable one column  vector
+OPT_variables = [reshape(X,8*(N+1),1);reshape(U,4*N,1);reshape(C,N,1)];
+nlp_prob = struct('f', obj, 'x', OPT_variables, 'g', constraints, 'p', P);
+
+opts = struct;
+opts.ipopt.max_iter = 100;
+opts.ipopt.print_level =0;%0,3
+opts.print_time = 0;
+opts.ipopt.acceptable_tol =1e-8;
+opts.ipopt.acceptable_obj_change_tol = 1e-6;
+
+solver = nlpsol('solver', 'ipopt', nlp_prob,opts);
+
+args = struct;
+args.lbg(1:8*(N+1)) = 0; % equality constraints
+args.ubg(1:8*(N+1)) = 0; % equality constraints
+
+args.lbg(8*(N+1)+1 : 8*(N+1)+ (2*N)) = 0; % inequality constraints
+args.ubg(8*(N+1)+1 : 8*(N+1)+ (2*N)) = inf; % inequality constraints
+
+args.lbx(1:8:8*(N+1),1) = xmin(1); %state x lower bound
+args.ubx(1:8:8*(N+1),1) = xmax(1); %state x upper bound
+args.lbx(2:8:8*(N+1),1) = xmin(2); %state y lower bound
+args.ubx(2:8:8*(N+1),1) = xmax(2); %state y upper bound
+args.lbx(3:8:8*(N+1),1) = xmin(3); %state z lower bound
+args.ubx(3:8:8*(N+1),1) = xmax(3); %state z upper bound
+args.lbx(4:8:8*(N+1),1) = xmin(4); %state psi lower bound
+args.ubx(4:8:8*(N+1),1) = xmax(4); %state psi upper bound
+args.lbx(5:8:8*(N+1),1) = xmin(5); %state xdot lower bound
+args.ubx(5:8:8*(N+1),1) = xmax(5); %state xdot upper bound
+args.lbx(6:8:8*(N+1),1) = xmin(6); %state ydot lower bound
+args.ubx(6:8:8*(N+1),1) = xmax(6); %state ydot upper bound
+args.lbx(7:8:8*(N+1),1) = xmin(7); %state zdot lower bound
+args.ubx(7:8:8*(N+1),1) = xmax(7); %state zdot upper bound
+args.lbx(8:8:8*(N+1),1) = xmin(8); %state psidot lower bound
+args.ubx(8:8:8*(N+1),1) = xmax(8); %state psidot upper bound
+
+args.lbx(8*(N+1)+1:4:8*(N+1)+4*N,1) = umin(1); %u lower bound
+args.ubx(8*(N+1)+1:4:8*(N+1)+4*N,1) = umax(1); %u upper bound
+args.lbx(8*(N+1)+2:4:8*(N+1)+4*N,1) = umin(2); %p lower bound
+args.ubx(8*(N+1)+2:4:8*(N+1)+4*N,1) = umax(2); %p upper bound
+args.lbx(8*(N+1)+3:4:8*(N+1)+4*N,1) = umin(3); %q lower bound
+args.ubx(8*(N+1)+3:4:8*(N+1)+4*N,1) = umax(3); %q upper bound
+args.lbx(8*(N+1)+4:4:8*(N+1)+4*N,1) = umin(4); %r lower bound
+args.ubx(8*(N+1)+4:4:8*(N+1)+4*N,1) = umax(4); %r upper bound
+
+args.lbx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = 0; %C lower bound
+args.ubx(8*(N+1)+4*N+1:1:8*(N+1)+4*N+N,1) = inf; %C upper bound
+
+
+%% Simulation
+t0 = 0;
+
+xlog(:,1) = x0; % xx contains the history of states
+t(1) = t0;
+
+u0 = zeros(N,4);
+X0 = repmat(x0,1,N+1)';
+C_0 = repmat(C_t,1,N);
+
+% Start MPC
+mpciter = 0;
+xx1 = [];
+u_cl=[];
+C_log = [];
+
+tic
+while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
+    args.p   = [x0;xf]; % set the values of the parameters vector
+    % initial value of the optimization variables
+    args.x0  = [reshape(X0',8*(N+1),1);reshape(u0',4*N,1);reshape(C_0',N,1)];
+    sol = solver('x0', args.x0, 'lbx', args.lbx, 'ubx', args.ubx,...
+        'lbg', args.lbg, 'ubg', args.ubg,'p',args.p);
+    u = reshape(full(sol.x(8*(N+1)+1:end-10))',4,N)'; % get controls only from the solution
+    xx1(:,1:8,mpciter+1)= reshape(full(sol.x(1:8*(N+1)))',8,N+1)'; % get solution TRAJECTORY
+    u_cl= [u_cl ; u(1,:)];
+    t(mpciter+1) = t0;
+    % Apply the control and shift the solution
+    [t0, x0, u0] = shift(dt, t0, x0, u,F);
+    xlog(:,mpciter+1) = x0;
+    X0 = reshape(full(sol.x(1:8*(N+1)))',8,N+1)'; % get solution TRAJECTORY
+    C_0 = reshape(full(sol.x(end-10+1:end))',1,N);
+    C_log = [C_log; C_0];
+    % Shift trajectory to initialize the next step
+    X0 = [X0(2:end,:);X0(end,:)];
+    mpciter
+    mpciter = mpciter + 1;
+end
+toc
+
+%% plots 
+Line_width = 2;
+Line_color = 'black';
+
+figure
+hold on
+subplot(2,2,1);
+plot(linspace(0, time_total, length(xlog) ), xlog(1,:),...
+    'LineWidth',Line_width ,'MarkerSize',4,'Color',Line_color);
+% xlabel('$t(s)$','interpreter','latex','FontSize',20);
+ylabel('$x(m) $','interpreter','latex','FontSize',10);
+
+subplot(2,2,2);
+hold on
+plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(2,:),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$t(s)$','interpreter','latex','FontSize',20);
+ylabel('$y(m) $','interpreter','latex','FontSize',10);
+
+subplot(2,2,3);
+hold on
+plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(3,:),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+ylabel('$z(m) $','interpreter','latex','FontSize',10);
+
+subplot(2,2,4);
+hold on
+plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(4,:),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+ylabel('$\psi(deg)$','interpreter','latex','FontSize',10);
+
+figure
+hold on
+subplot(2,2,1);
+hold on
+plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(5,:),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$t(s)$','interpreter','latex','FontSize',20);
+ylabel('$u(m/s)$','interpreter','latex','FontSize',10);
+
+subplot(2,2,2);
+hold on
+plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(6,:),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$t(s)$','interpreter','latex','FontSize',20);
+ylabel('$v(m/s)$','interpreter','latex','FontSize',10);
+
+subplot(2,2,3);
+hold on
+plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(7,:),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+ylabel('$w(m/s)$','interpreter','latex','FontSize',10);
+
+subplot(2,2,4);
+hold on
+plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(8,:),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+ylabel('$r(rad/s)$','interpreter','latex','FontSize',10);
+
+figure
+hold on
+subplot(2,2,1);
+plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,1),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+xlabel('$t (s)$','interpreter','latex','FontSize',20);
+ylabel('$f_{surge}(N)$','interpreter','latex','FontSize',10);
+
+subplot(2,2,2);
+hold on
+plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,2),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$t (s)$','interpreter','latex','FontSize',20);
+ylabel('$f_{sway}(N)$','interpreter','latex','FontSize',10);
+
+subplot(2,2,3);
+hold on
+plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,3),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+ylabel('$f_{heave}(N)$','interpreter','latex','FontSize',10);
+
+subplot(2,2,4);
+hold on
+plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,4),...
+    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+ylabel('$\tau_{yaw}(N.m)$','interpreter','latex','FontSize',10);
+% sgtitle('Control Inputs')
+
+
+figure
+% hold on
+plot3(xlog(1,:), xlog(2,:), xlog(3,:),'LineWidth', Line_width,'Color','red')
+xlabel('x(m)','interpreter','latex','FontSize',20);
+ylabel('y(m)','interpreter','latex','FontSize',20);
+zlabel('z(m)','interpreter','latex','FontSize',20);
+hold on
+[X,Y,Z] = sphere;
+% 
+x_obs1 = obs1(1); y_obs1 = obs1(2);
+z_obs1 = obs1(3); r_obs1 = obs1(4);
+surf(r_obs1*(X)+x_obs1,r_obs1*(Y)+y_obs1,r_obs1*(Z)+z_obs1)
+
+x_obs2 = obs2(1); y_obs2 = obs2(2);
+z_obs2 = obs2(3); r_obs2 = obs2(4);
+surf(r_obs2*(X)+x_obs2,r_obs2*(Y)+y_obs2,r_obs2*(Z)+z_obs2)
+
+%%
+F_values = [];
+for i=1:length(xlog)
+    F_values = [F_values;div_f_discrete(xlog(:,i))];
+end
