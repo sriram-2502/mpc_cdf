@@ -385,7 +385,7 @@ surf(X+obs_sphere(1),Y+obs_sphere(2),Z+obs_sphere(3)); hold on
 axis equal
 
 colormap gray
-% plot start, goal and traj
+% plot start, goal
 plot3(x_ini(1), x_ini(2), x_ini(3), 'o', 'MarkerSize', 10, 'MarkerFaceColor', 'black', 'MarkerEdgeColor','black'); hold on;
 plot3(xf(1), xf(2), xf(3), 'o', 'MarkerSize', 10, 'MarkerFaceColor', green, 'MarkerEdgeColor', green); hold on;
 
