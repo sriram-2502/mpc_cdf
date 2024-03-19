@@ -42,7 +42,7 @@ Q = 10*diag([10,10,10, 10, o, o, o, o]);
 P_weight = 100*diag([10,10,10,10, o, o, o, o]);
 R = 1*diag([1, 1, 1, 1]);
 N = 10;
-gamma = 0.9;
+gamma = 0.1;
 
 xmin = [-inf; -inf; -inf;-100; -100; -100; -100; -100];
 xmax = -xmin;
