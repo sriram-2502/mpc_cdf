@@ -82,7 +82,9 @@ rho_cylinder = Function('rho',{states,obs},{rho_cylinder});
 rho_sphere = density_sphere(states,obs_sphere);
 rho_sphere = Function('rho',{states,obs},{rho_sphere}); 
 
-
+% -------- use cbf of sphere as a distance function -----
+b_sphere = CBF_sphere(states,obs_sphere);
+b_sphere = Function('b',{states,obs},{b_sphere});
 
 %% Dynamics Setup 
 [dx_dt,f,g] = AUV_dynamics(states, controls, dt);
@@ -403,12 +405,30 @@ ylabel('$x_2$','interpreter','latex', 'FontSize', 20);
 zlabel('$x_3$','interpreter','latex', 'FontSize', 20);
 
 %% ------ plot density function over time
-figure
+figure(2)
+subplot(2,4,[1,2])
 rho_log = full(rho_sphere(xlog,obs_sphere));
 time_log = linspace(0, time_total, length(xlog(1,:)));
 plot(time_log, rho_log,'LineWidth', 2);
-xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$\rho(x) $','interpreter','latex','FontSize',10);
+
+axes1 = gca;
+box(axes1,'on');
+set(axes1,'FontSize',15,'LineWidth',2)
+xlabel('time(s)','interpreter','latex','FontSize',20);
+ylabel('$\rho(x) $','interpreter','latex','FontSize',20);
+
+
+% ------ plot distance between spherical obstacle -------------
+subplot(2,4,[5,6])
+cbf_dist_log = full(b_sphere(xlog,obs_sphere)); % distance with cbf
+time_log = linspace(0, time_total, length(xlog(1,:)));
+plot(time_log, cbf_dist_log,'LineWidth', 2);
+
+axes2 = gca;
+box(axes2,'on');
+set(axes2,'FontSize',15,'LineWidth',2)
+xlabel('time(s)','interpreter','latex','FontSize',20);
+ylabel('distance','interpreter','latex','FontSize',10);
 
 
 %% -------------- plots vs time ---------------------------

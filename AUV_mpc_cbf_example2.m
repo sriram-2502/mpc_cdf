@@ -365,12 +365,19 @@ ylabel('$x_2$','interpreter','latex', 'FontSize', 20);
 zlabel('$x_3$','interpreter','latex', 'FontSize', 20);
 
 %% ------ plot density function over time
-figure
-cbf_log = full(b_sphere(xlog,obs_sphere));
+figure(2)
+subplot(2,4,[1,2])
+cbf_log = full(b_sphere(xlog,obs_sphere)); % distance with cbf
 time_log = linspace(0, time_total, length(xlog(1,:)));
-plot(time_log, cbf_log,'LineWidth', 2);
-xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$\h(x) $','interpreter','latex','FontSize',10);
+plot(time_log, cbf_log,'LineWidth', 2); hold on
+
+% set plot settings
+axes1 = gca;
+box(axes1,'on');
+set(axes1,'FontSize',15,'LineWidth',1.5)
+xlabel('time (s)','interpreter','latex','FontSize',20);
+ylabel('$h(x)$, distance','interpreter','latex','FontSize',20);
+box on
 
 %% -------------- plots vs time ---------------------------
 % % plot states vs time
