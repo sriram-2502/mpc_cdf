@@ -43,8 +43,15 @@ umin = [-inf; -inf; -inf; -inf];
 umax = -umin;
 
 % ----------- Environment setup --------------------
-x0 = [15; 16; 17; 2; 0; 0; 0; 0]; % initial Condition
-xf = [0; 0; 0; 0; 0; 0; 0; 0]; % target
+% initial Conditions on a grid
+num_pts = 5;
+ics = [-4*ones(1,num_pts), -2*ones(1,num_pts), 0*ones(1,num_pts), 2*ones(1,num_pts), 4*ones(1,num_pts);
+        10*ones(1,num_pts), 10*ones(1,num_pts), 10*ones(1,num_pts), 10*ones(1,num_pts), 10*ones(1,num_pts);
+        linspace(0,10,num_pts), linspace(0,10,num_pts), linspace(0,10,num_pts), linspace(0,10,num_pts), linspace(0,10,num_pts)];
+num_ics = size(ics, 2); % Total number of ICs
+
+x0 = [ics(:,1); 0; 0; 0; 0];
+xf = [0; -1; 5; 0; 0; 0; 0; 0]; % target
 
 obs_x = SX.sym('obs_x');
 obs_y = SX.sym('obs_y');
@@ -53,13 +60,28 @@ obs_r = SX.sym('obs_r');
 obs_s = SX.sym('obs_s');
 obs = [obs_x;obs_y;obs_z;obs_r;obs_s];
 
-num_obs = 2; % Number of obstacles
-obs_rad = [1; 1.5];
-obs_sens =[3; 3];
+% obstacle list for sphere world
+num_obs = 15; % Number of obstacles
+obs_rad = [0.75, 0.75, 0.75, 0.75, 1, 1, 1, 1, 1, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25];
+obs_sens = obs_rad + 1;
 
-% obstalce locations
-obs1 = [8;8;8.5;obs_rad(1);obs_sens(1)];
-obs2 = [3.2;4.1;3.5;obs_rad(2);obs_sens(2)];
+% Vertices of box
+obs1 = [3; 8; 8; obs_rad(1); obs_sens(1)]; 
+obs2 = [-3; 8; 8; obs_rad(2); obs_sens(2)];
+obs3 = [3; 8; 2; obs_rad(3); obs_sens(3)];
+obs4 = [-3; 8; 2; obs_rad(4); obs_sens(4)];
+obs5 = [3; 2; 8; obs_rad(5); obs_sens(5)];
+obs6 = [-3; 2; 8; obs_rad(6); obs_sens(6)];
+obs7 = [3; 2; 2; obs_rad(7); obs_sens(7)];
+obs8 = [-3; 2; 2; obs_rad(8); obs_sens(8)];
+
+obs9 = [0; 5; 5; obs_rad(9); obs_sens(9)]; % Center
+obs10 = [-3; 5; 5; obs_rad(10); obs_sens(10)]; % Left center
+obs11 = [3; 5; 5; obs_rad(11); obs_sens(11)]; % Right Center
+obs12 = [0; 8; 5.1; obs_rad(12); obs_sens(12)]; % Back Center
+obs13 = [0; 2; 5; obs_rad(13); obs_sens(13)]; % Front Center
+obs14 = [0; 5; 8; obs_rad(14); obs_sens(14)]; % Top Center
+obs15 = [0; 5; 2; obs_rad(15); obs_sens(15)]; % Bottom Center
 
 % ------------ Density function setup ------------
 rho_sphere = density_sphere(states,obs);
@@ -162,6 +184,7 @@ for obs_num = 1:num_obs
     end
 end
 
+
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
 OPT_variables = [reshape(X,n_states*(N+1),1);reshape(U,n_controls*N,1);reshape(C,N,1)];
@@ -179,6 +202,7 @@ solver = nlpsol('solver', 'ipopt', nlp_prob,opts);
 args = struct;
 args.lbg(1:n_states*(N+1)) = 0; % equality constraints
 args.ubg(1:n_states*(N+1)) = 0; % equality constraints
+
 args.lbg(n_states*(N+1)+1 : n_states*(N+1)+ (2*N)) = 0; % inequality constraints
 args.ubg(n_states*(N+1)+1 : n_states*(N+1)+ (2*N)) = inf; % inequality constraints
 
@@ -260,7 +284,7 @@ end
 F = findall(0,'type','figure','tag','TMWWaitbar');
 delete(F);
 
-%% ------------- plot 3D trajectory --------------------------
+%% ---------------- plot 3D trajectory ----------------------  
 Line_width = 2;
 Line_color = 'black';
 
@@ -274,103 +298,104 @@ hold on
 
 % plot obstacles
 [x_pts,y_pts,z_pts] = sphere(20);
-for i=1:num_obs
-    obs_loc = eval(sprintf('obs%d',i));
+for i=obs_num:num_obs
+    obs_loc = eval(sprintf('obs%d',obs_num));
     s = surf(x_pts*obs_rad(i)+ obs_loc(1), y_pts*obs_rad(i) + obs_loc(2), ...
         z_pts*obs_rad(i) + obs_loc(3));
     hold on;
     s.EdgeColor = 'none';
     s.FaceAlpha = 0.6;
 end
+    
 
-%% --------------- plots vs time ---------------------------------
-% plot states vs time
-figure(2)
-hold on
-subplot(2,2,1);
-plot(linspace(0, time_total, length(xlog) ), xlog(1,:),...
-    'LineWidth',Line_width ,'MarkerSize',4,'Color',Line_color);
-% xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$x(m) $','interpreter','latex','FontSize',10);
-
-subplot(2,2,2);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(2,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-% xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$y(m) $','interpreter','latex','FontSize',10);
-
-subplot(2,2,3);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(3,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$z(m) $','interpreter','latex','FontSize',10);
-
-subplot(2,2,4);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(4,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$\psi(deg)$','interpreter','latex','FontSize',10);
-
-% plots controls1 vs time
-figure(3)
-hold on
-subplot(2,2,1);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(5,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-% xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$u(m/s)$','interpreter','latex','FontSize',10);
-
-subplot(2,2,2);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(6,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-% xlabel('$t(s)$','interpreter','latex','FontSize',20);
-ylabel('$v(m/s)$','interpreter','latex','FontSize',10);
-
-subplot(2,2,3);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(7,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$w(m/s)$','interpreter','latex','FontSize',10);
-
-subplot(2,2,4);
-hold on
-plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(8,:),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$r(rad/s)$','interpreter','latex','FontSize',10);
-
-% controls2 vs time
-figure(4)
-hold on
-subplot(2,2,1);
-plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,1),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$t (s)$','interpreter','latex','FontSize',20);
-ylabel('$f_{surge}(N)$','interpreter','latex','FontSize',10);
-
-subplot(2,2,2);
-hold on
-plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,2),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+%% -------------- plots vs time ---------------------------
+% % plot states vs time
+% figure(2)
+% hold on
+% subplot(2,2,1);
+% plot(linspace(0, time_total, length(xlog) ), xlog(1,:),...
+%     'LineWidth',Line_width ,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t(s)$','interpreter','latex','FontSize',20);
+% ylabel('$x(m) $','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,2);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(2,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t(s)$','interpreter','latex','FontSize',20);
+% ylabel('$y(m) $','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,3);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(3,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$z(m) $','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,4);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(4,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$\psi(deg)$','interpreter','latex','FontSize',10);
+% 
+% % plots controls1 vs time
+% figure(3)
+% hold on
+% subplot(2,2,1);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(5,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t(s)$','interpreter','latex','FontSize',20);
+% ylabel('$u(m/s)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,2);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(6,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t(s)$','interpreter','latex','FontSize',20);
+% ylabel('$v(m/s)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,3);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(7,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$w(m/s)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,4);
+% hold on
+% plot(linspace(0, time_total, length(xlog(1,:)) ), xlog(8,:),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$r(rad/s)$','interpreter','latex','FontSize',10);
+% 
+% % controls2 vs time
+% figure(4)
+% hold on
+% subplot(2,2,1);
+% plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,1),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
 % xlabel('$t (s)$','interpreter','latex','FontSize',20);
-ylabel('$f_{sway}(N)$','interpreter','latex','FontSize',10);
-
-subplot(2,2,3);
-hold on
-plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,3),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$f_{heave}(N)$','interpreter','latex','FontSize',10);
-
-subplot(2,2,4);
-hold on
-plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,4),...
-    'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
-xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
-ylabel('$\tau_{yaw}(N.m)$','interpreter','latex','FontSize',10);
+% ylabel('$f_{surge}(N)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,2);
+% hold on
+% plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,2),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% % xlabel('$t (s)$','interpreter','latex','FontSize',20);
+% ylabel('$f_{sway}(N)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,3);
+% hold on
+% plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,3),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$f_{heave}(N)$','interpreter','latex','FontSize',10);
+% 
+% subplot(2,2,4);
+% hold on
+% plot(linspace(0, time_total, length(u_cl(:,1))),u_cl(:,4),...
+%     'LineWidth', Line_width,'MarkerSize',4,'Color',Line_color);
+% xlabel('$Time(sec.)$','interpreter','latex','FontSize',10);
+% ylabel('$\tau_{yaw}(N.m)$','interpreter','latex','FontSize',10);
