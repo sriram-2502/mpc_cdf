@@ -2,7 +2,6 @@ function b = CBF_torous_xz(states)
 % Inputs 
 % states    : [x; y; z; psi; xdot; ydot; zdot; psidot] -> casadi variables;
 % outputs
-% rho       : density function for spherical obstalce
     
     % torus 1 in XZ
     cx = obs(1); cy = obs(2); cz = obs(3); % center
