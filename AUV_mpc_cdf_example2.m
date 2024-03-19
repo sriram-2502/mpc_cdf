@@ -67,7 +67,7 @@ num_obs = 4; % Number of obstacles
 obs_toros_xy = [0;0;2;2;3];
 obs_toros_xz = [8;0;0;1;2];
 obs_cylinder = [-3;0;0;2;3];
-obs_sphere = [0;-6;-4;3;4];
+obs_sphere = [0;-6;-4;3;10];
 
 % ------------ Density function setup ------------
 rho_toros_xy = density_sphere(states,obs_toros_xy);
@@ -368,7 +368,7 @@ surf(x,y,z); hold on
 axis equal
 
 %  plot cylinder
-r = 2; h = 40;
+r = obs_cylinder(4); h = 40;
 [X,Y,Z] = cylinder(r,20);
 Z = Z*h;
 surf(X+obs_cylinder(1),Y+obs_cylinder(2),Z-20); hold on
@@ -376,7 +376,7 @@ axis equal
 
 % plot shere
 [X,Y,Z] = sphere;
-r = 3;
+r = obs_sphere(4);
 X = X*r;
 Y = Y*r;
 Z = Z*r;
@@ -401,6 +401,14 @@ set(axes1,'FontSize',15,'LineWidth',1.5)
 xlabel('$x_1$','interpreter','latex', 'FontSize', 20);
 ylabel('$x_2$','interpreter','latex', 'FontSize', 20);
 zlabel('$x_3$','interpreter','latex', 'FontSize', 20);
+
+%% ------ plot density function over time
+figure
+rho_log = full(rho_sphere(xlog,obs_sphere));
+time_log = linspace(0, time_total, length(xlog(1,:)));
+plot(time_log, rho_log,'LineWidth', 2);
+xlabel('$t(s)$','interpreter','latex','FontSize',20);
+ylabel('$\rho(x) $','interpreter','latex','FontSize',10);
 
 
 %% -------------- plots vs time ---------------------------

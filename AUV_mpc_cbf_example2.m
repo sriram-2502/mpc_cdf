@@ -80,8 +80,7 @@ b_cylinder = CBF_sphere(states,obs_cylinder);
 b_cylinder = Function('b',{states,obs},{b_cylinder}); 
 
 b_sphere = CBF_sphere(states,obs_sphere);
-b_sphere = Function('b',{states,obs},{b_sphere}); 
-
+b_sphere = Function('b',{states,obs},{b_sphere});
 
 
 %% Dynamics Setup 
@@ -365,6 +364,13 @@ xlabel('$x_1$','interpreter','latex', 'FontSize', 20);
 ylabel('$x_2$','interpreter','latex', 'FontSize', 20);
 zlabel('$x_3$','interpreter','latex', 'FontSize', 20);
 
+%% ------ plot density function over time
+figure
+cbf_log = full(b_sphere(xlog,obs_sphere));
+time_log = linspace(0, time_total, length(xlog(1,:)));
+plot(time_log, cbf_log,'LineWidth', 2);
+xlabel('$t(s)$','interpreter','latex','FontSize',20);
+ylabel('$\h(x) $','interpreter','latex','FontSize',10);
 
 %% -------------- plots vs time ---------------------------
 % % plot states vs time
