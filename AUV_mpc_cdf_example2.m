@@ -65,8 +65,8 @@ obs = [obs_x;obs_y;obs_z;obs_r;obs_s];
 % obstacle list for complex 3D world
 num_obs = 4; % Number of obstacles
 obs_toros_xy = [0;0;0;2;3];
-obs_toros_xz = [12;0;0;2;3];
-obs_cylinder = [0;1;0;2;3];
+obs_toros_xz = [8;0;0;1;2];
+obs_cylinder = [0;-3;0;2;3];
 obs_sphere = [0;-6;-4;3;4];
 
 % ------------ Density function setup ------------
@@ -159,46 +159,45 @@ st = X(:,k);
 obj = obj+(st-P(9:16))'*P_weight*(st-P(9:16)); % calculate obj
 
 % density constraint for obstacles
-% % add toros in xy
-% for k = 1:N
-%     % get current and next state
-%     st = X(:,k); st_next = X(:,k+1);
-%     % get current control
-%     con = U(:,k);
-% 
-%     % get obs location
-%     obs_loc = obs_toros_xy;
-% 
-%     % get current and next rho
-%     rho = rho_toros_xy(st,obs_loc);
-%     rho_next = rho_toros_xy(st_next,obs_loc);
-%     
-%     % form density constraint
-%     density_constraint = (rho_next-rho) + dt*(div_f_discrete(st)+div_g_discrete(st))*rho;
-%     slack = dt*C(k)*rho;
-%     constraints = [constraints; density_constraint - slack];
-% end
+% add toros in xy
+for k = 1:N
+    % get current and next state
+    st = X(:,k); st_next = X(:,k+1);
+    % get current control
+    con = U(:,k);
 
-% % add toros in xz
-% for k = 1:N
-%     % get current and next state
-%     st = X(:,k); st_next = X(:,k+1);
-%     % get current control
-%     con = U(:,k);
-% 
-%     % get obs location
-%     obs_loc = obs_toros_xz;
-% 
-%     % get current and next rho
-%     rho = rho_toros_xz(st,obs_loc);
-%     rho_next = rho_toros_xz(st_next,obs_loc);
-%     
-%     % form density constraint
-%     density_constraint = (rho_next-rho) + dt*(div_f_discrete(st)+div_g_discrete(st))*rho;
-%     slack = dt*C(k)*rho;
-%     constraints = [constraints; density_constraint - slack];
-% end
+    % get obs location
+    obs_loc = obs_toros_xy;
 
+    % get current and next rho
+    rho = rho_toros_xy(st,obs_loc);
+    rho_next = rho_toros_xy(st_next,obs_loc);
+    
+    % form density constraint
+    density_constraint = (rho_next-rho) + dt*(div_f_discrete(st)+div_g_discrete(st))*rho;
+    slack = dt*C(k)*rho;
+    constraints = [constraints; density_constraint - slack];
+end
+
+% add toros in xz
+for k = 1:N
+    % get current and next state
+    st = X(:,k); st_next = X(:,k+1);
+    % get current control
+    con = U(:,k);
+
+    % get obs location
+    obs_loc = obs_toros_xz;
+
+    % get current and next rho
+    rho = rho_toros_xz(st,obs_loc);
+    rho_next = rho_toros_xz(st_next,obs_loc);
+    
+    % form density constraint
+    density_constraint = (rho_next-rho) + dt*(div_f_discrete(st)+div_g_discrete(st))*rho;
+    slack = dt*C(k)*rho;
+    constraints = [constraints; density_constraint - slack];
+end
 
 % add cylinder
 for k = 1:N
@@ -259,8 +258,8 @@ args = struct;
 args.lbg(1:n_states*(N+1)) = 0; % equality constraints
 args.ubg(1:n_states*(N+1)) = 0; % equality constraints
 
-args.lbg(n_states*(N+1)+1 : n_states*(N+1)+ (2*N)) = 0; % inequality constraints
-args.ubg(n_states*(N+1)+1 : n_states*(N+1)+ (2*N)) = inf; % inequality constraints
+args.lbg(n_states*(N+1)+1 : n_states*(N+1)+ (num_obs*N)) = 0; % inequality constraints
+args.ubg(n_states*(N+1)+1 : n_states*(N+1)+ (num_obs*N)) = inf; % inequality constraints
 
 args.lbx(1:n_states:n_states*(N+1),1) = xmin(1); %state x lower bound
 args.ubx(1:n_states:n_states*(N+1),1) = xmax(1); %state x upper bound
@@ -350,24 +349,24 @@ zlabel('z(m)','interpreter','latex','FontSize',20);
 hold on
 
 % plot obstacles
-% plot torus 1
-% cx = 0; cy = 0; cz = 0; % center
-% [theta,phi] = meshgrid(linspace(0,2*pi,25));
-% R = 10; r = 2;
-% x = (R + r*cos(theta)).*cos(phi) + cx;
-% y = (R + r*cos(theta)).*sin(phi) + cy;
-% z = r*sin(theta) + cz;
-% surf(x,y,z); hold on
-% axis equal
+% plot torus in xy
+cx = obs_toros_xy(1); cy = obs_toros_xy(2); cz = obs_toros_xy(3); % center
+[theta,phi] = meshgrid(linspace(0,2*pi,25));
+R = 10; r = obs_toros_xy(4);
+x = (R + r*cos(theta)).*cos(phi) + cx;
+y = (R + r*cos(theta)).*sin(phi) + cy;
+z = r*sin(theta) + cz;
+surf(x,y,z); hold on
+axis equal
 
-% plot torus 2
-% R = 7; r = 2;
-% cx = 12; cy = 0; cz = 0; % center
-% x = (R + r*cos(theta)).*cos(phi) + cx;
-% z = (R + r*cos(theta)).*sin(phi) + cz;
-% y = r*sin(theta) + cy;
-% surf(x,y,z); hold on
-% axis equal
+% plot torus in xz
+R = 7; r = obs_toros_xz(4);
+cx = obs_toros_xz(1); cy = obs_toros_xz(2); cz = obs_toros_xz(3);
+x = (R + r*cos(theta)).*cos(phi) + cx;
+z = (R + r*cos(theta)).*sin(phi) + cz;
+y = r*sin(theta) + cy;
+surf(x,y,z); hold on
+axis equal
 
 %  plot cylinder
 r = 2; h = 40;
@@ -379,9 +378,9 @@ axis equal
 % plot shere
 [X,Y,Z] = sphere;
 r = 3;
-X = X * r;
-Y = Y * r;
-Z = Z * r;
+X = X*r;
+Y = Y*r;
+Z = Z*r;
 surf(X+obs_sphere(1),Y+obs_sphere(2),Z+obs_sphere(3)); hold on
 axis equal
 
