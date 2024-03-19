@@ -4,6 +4,14 @@ close all;
 import casadi.*
 addpath dynamics\ density_functions\ barrier_functions\
 
+% setup colors for plots
+colors = colororder;
+blue = colors(1,:);
+red = colors(2,:);
+yellow = colors(3,:);
+green = colors(5,:);
+obsColor = [.7 .7 .7]; % Obstacle color -> Grey
+
 %% Setup Parameters
 % ---------- system setup ---------------
 % states for AUV
