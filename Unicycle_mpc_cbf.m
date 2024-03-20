@@ -30,12 +30,12 @@ n_controls = length(controls);
 
 %---------- MPC setup ----------------------
 time_total = 10; % time for the total steps, equal to tsim
-dt = 0.01;
+dt = 0.1;
 o = 3;
-Q = 100*diag([10,10,o,10]);
-P_weight = 1e3*diag([10,10,o,10]);
+Q = 100*diag([10,10,o,o]);
+P_weight = 1e3*diag([10,10,o,o]);
 R = 10*diag([1, 1]);
-N = 10;
+N = 100;
 C_t = 0.1;
 
 xmin = [-inf; -inf; -inf; -inf];
@@ -65,7 +65,7 @@ obs1 = [4; 0; obs_rad(1); obs_sens(1)];
 %---------- cbf setup --------------------
 b_circle = CBF_circle(states,obs);
 b_circle = Function('b',{states,obs},{b_circle}); 
-gamma = 0.01;
+gamma = 0.1;
 
 
 %% Dynamics Setup 
@@ -81,8 +81,6 @@ X = SX.sym('X',n_states,(N+1));
 % Decision variables for control
 U = SX.sym('U',n_controls,N); 
 
-% Decision variables for slack
-C = SX.sym('C',N); 
 
 % parameters (which include at the initial state of the robot and the reference state)
 P = SX.sym('P',n_states + n_states);
@@ -117,14 +115,14 @@ for obs_num = 1:num_obs
         st = X(:,k); st_next = X(:,k+1);
         % get current control
         con = U(:,k);
-    
+
         % get obs location
         obs_loc = eval(sprintf('obs%d',obs_num));
-        
+
         % get current and next b(barrier)
         b = b_circle(st,obs_loc);
         b_next =b_circle(st_next,obs_loc);
-        
+
         % form CBF constraint
         CBF_constraint = b_next - b  + gamma*b;
         constraints = [constraints; CBF_constraint];
@@ -134,7 +132,7 @@ end
 
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
-OPT_variables = [reshape(X,n_states*(N+1),1);reshape(U,n_controls*N,1);reshape(C,N,1)];
+OPT_variables = [reshape(X,n_states*(N+1),1);reshape(U,n_controls*N,1)];
 nlp_prob = struct('f', obj, 'x', OPT_variables, 'g', constraints, 'p', P);
 
 opts = struct;
@@ -157,16 +155,18 @@ args.lbx(1:n_states:n_states*(N+1),1) = xmin(1); %state x lower bound
 args.ubx(1:n_states:n_states*(N+1),1) = xmax(1); %state x upper bound
 args.lbx(2:n_states:n_states*(N+1),1) = xmin(2); %state y lower bound
 args.ubx(2:n_states:n_states*(N+1),1) = xmax(2); %state y upper bound
-args.lbx(4:n_states:n_states*(N+1),1) = xmin(4); %state theta lower bound
-args.ubx(4:n_states:n_states*(N+1),1) = xmax(4); %state theta upper bound
+args.lbx(3:n_states:n_states*(N+1),1) = xmin(3); %state theta lower bound
+args.ubx(3:n_states:n_states*(N+1),1) = xmax(3); %state theta upper bound
+args.lbx(4:n_states:n_states*(N+1),1) = xmin(4); %state velocity lower bound
+args.ubx(4:n_states:n_states*(N+1),1) = xmax(4); %state velocity upper bound
+
 
 args.lbx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umin(1); %v lower bound
 args.ubx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umax(1); %v upper bound
 args.lbx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umin(2); %w lower bound
 args.ubx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umax(2); %w upper bound
 
-args.lbx(n_states*(N+1)+n_controls*N+1:1:n_states*(N+1)+n_controls*N+N,1) = 0; %C lower bound
-args.ubx(n_states*(N+1)+n_controls*N+1:1:n_states*(N+1)+n_controls*N+N,1) = inf; %C upper bound
+
 
 
 %% Simulate MPC controller with AUV dynamics
@@ -175,13 +175,13 @@ xlog(:,1) = x0; % xx contains the history of states
 t(1) = t0;
 u0 = zeros(N,n_controls);
 X0 = repmat(x0,1,N+1)';
-C_0 = repmat(C_t,1,N);
+
 
 % Start MPC
 mpciter = 0;
 xx1 = [];
 u_cl=[];
-C_log = [];
+
 
 w_bar = waitbar(0,'1','Name','Simulating MPC-CDF...',...
     'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
@@ -193,10 +193,10 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     args.p   = [x0;xf]; % set the values of the parameters vector
 
     % initial value of the optimization variables
-    args.x0  = [reshape(X0',n_states*(N+1),1);reshape(u0',n_controls*N,1);reshape(C_0',N,1)];
+    args.x0  = [reshape(X0',n_states*(N+1),1);reshape(u0',n_controls*N,1)];
     sol = solver('x0', args.x0, 'lbx', args.lbx, 'ubx', args.ubx,...
         'lbg', args.lbg, 'ubg', args.ubg,'p',args.p);
-    u = reshape(full(sol.x(n_states*(N+1)+1:end-10))',n_controls,N)'; % get controls only from the solution
+    u = reshape(full(sol.x(n_states*(N+1)+1:end))',n_controls,N)'; % get controls only from the solution
     xx1(:,1:n_states,mpciter+1)= reshape(full(sol.x(1:n_states*(N+1)))',n_states,N+1)'; % get solution TRAJECTORY
     u_cl= [u_cl ; u(1,:)];
     t(mpciter+1) = t0;
@@ -205,7 +205,6 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     [t0, x0, u0] = shift(dt, t0, x0, u,F);
     xlog(:,mpciter+1) = x0;
     X0 = reshape(full(sol.x(1:n_states*(N+1)))',n_states,N+1)'; % get solution TRAJECTORY
-    C_0 = reshape(full(sol.x(end-10+1:end))',1,N);
 
 
     % Shift trajectory to initialize the next step
