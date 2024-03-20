@@ -53,7 +53,7 @@ umax = -umin;
 % ----------- Environment setup --------------------
 x0 = [10; 10; 10; 2; 0; 0; 0; 0]; % initial Condition
 xf = [0; 0; 0; 0; 0; 0; 0; 0]; % target
-gamma =0.5;
+gamma =0.1;
 
 obs_x = SX.sym('obs_x');
 obs_y = SX.sym('obs_y');
@@ -70,48 +70,16 @@ obs_sens =[3; 3];
 obs1 = [8;8;8.5;obs_rad(1);obs_sens(1)];
 obs2 = [3.2;4.1;3.5;obs_rad(2);obs_sens(2)];
 
-% ------------ Density function setup ------------
+% ------------ cbf function setup ------------
 b_sphere = CBF_sphere(states,obs);
 b_sphere = Function('b',{states,obs},{b_sphere}); 
 
 
 %% Dynamics Setup 
 [dx_dt,f,g] = AUV_dynamics(states, controls, dt);
-f_discrete = dt*f + states;
-g_discrete = dt*g;
-
-% define matlab functions for divergence of f_discrete
-jacob_f_discrete = jacobian(f_discrete, states');
-div_f_discrete = sum(diag(jacob_f_discrete));
-div_f_discrete = Function('Div_F',{states},{div_f_discrete});
-
-% define matlab functions for divergence of g_discrete for each column
-g_discrete1 = g_discrete(:,1);
-jacob_G_discrete1 = jacobian(g_discrete1, states');
-div_g_discrete1 = sum(diag(jacob_G_discrete1));
-
-g_discrete2 = g_discrete(:,2);
-jacob_g_discrete2 = jacobian(g_discrete2, states');
-div_g_discrete2 = sum(diag(jacob_g_discrete2));
-
-g_discrete3 = g_discrete(:,3);
-jacob_g_discrete3 = jacobian(g_discrete3, states');
-div_g_discrete3 = sum(diag(jacob_g_discrete3));
-
-g_discrete4 = g_discrete(:,4);
-jacob_g_discrete4 = jacobian(g_discrete4, states');
-div_g_discrete4 = sum(diag(jacob_g_discrete4));
-
-% calculate the total divergence of g_discrete
-div_g_discrete = div_g_discrete1+div_g_discrete2+div_g_discrete3+div_g_discrete4;
-div_g_discrete = Function('div_G_discrete1',{states},{div_g_discrete});
-
 
 % define matlab functions for F=f+gu, f, g
 F = Function('F',{states,controls},{dx_dt}); 
-f = Function('f',{states},{f}); 
-g = Function('g',{states},{g});
-
 %% Casdai MPC setup
 % A vector that represents the states over the optimization problem.
 X = SX.sym('X',n_states,(N+1));
