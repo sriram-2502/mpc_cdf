@@ -1,6 +1,6 @@
-function [t0, x0, u0] = shift(T, t0, x0, u, f)
+function [t0, x0, u0] = shift_density(T, t0, x0, u, f, rho)
 st = x0;
-con = u(1,:)';
+con = u(1,:)'/rho(1);
 
 
 f_value = f(st,con);
