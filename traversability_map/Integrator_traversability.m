@@ -13,7 +13,7 @@ green = colors(5,:);
 obsColor = [.7 .7 .7]; % Obstacle color -> Grey
 
 %% Setup Parameters
-% ---------- system setup ---------------
+% ---------- system setup -------------------------------------------------
 % states for integrator
 x = SX.sym('x');
 y = SX.sym('y');
@@ -27,27 +27,39 @@ rho_bar2 = SX.sym('rho_bar2');
 controls = [rho_bar1;rho_bar2];
 n_controls = length(controls);
 
-% ------------- env setup --------------
+% ------------- env setup -------------------------------------------------
 % initial Conditions on a grid
-x0 = [0;0.01]; x_ini = x0;
-xf = [2;1]; % target
+x0 = [2;10]; x_ini = x0;
+xf = [15;10]; % target
 rho_0 = 1e-2;
 tracking = 0; % set to 1 to track a ref traj
 
-%---------- MPC setup ----------------------
+% ------------- load height map and fit rbfs ------------------------------
+grid_map = readmatrix('Terrain Map.xlsx','Sheet','center_hill');
+max_val = max(grid_map,[],"all");
+height_map = grid_map./max_val;
+[rows, cols] = size(height_map);
+
+% Generate the uniform grid centers
+grid_spacing = 1; sigma = 1; 
+[center_x, center_y] = meshgrid(1:grid_spacing:cols, 1:grid_spacing:rows);
+centers = [center_x(:), center_y(:)];
+% Fit RBFs and get the weights
+weights = fit_rbf(height_map, centers, sigma);
+
+%---------- MPC setup -----------------------------------------------------
 time_total = 10; % time for the total steps, equal to tsim
-N = 10; % for mismatch use N = 100
-dt = 0.01; % use dt = 0.1 for cbf and vanilla obs
-Q = 10*diag([10,10]);
+N = 20; gamma = 0.05;
+dt = 0.01;
+Q = 1*diag([1,1]);
 R = 1e-2*diag([1, 1]);
 C_t = 0.1;
+P_weight = 100*diag([10,10]); % terminal cost
 
 xmin = [-inf; -inf];
 xmax = -xmin;
-
 umin = [-inf; -inf];
 umax = -umin;
-
 rho_min = 1e-2;
 rho_max = 1e3;
 
@@ -126,7 +138,7 @@ for k = 1:N
         % for point stabilization
         q_x = (st-P(n_states+1:2*n_states))'*Q*(st-P(n_states+1:2*n_states));
     end
-    obj = obj+ + q_x*rho + (con'*R*con)/rho;
+    obj = obj + q_x*rho + (con'*R*con)/rho;
     
     % CONSTRAINT: get dynamics constraint
     % x(k+1) = F(x(k),u(k))
@@ -134,6 +146,13 @@ for k = 1:N
     f_value = F(st,con);
     st_next_euler = st + (dt*f_value);
     constraints = [constraints;st_next-st_next_euler]; 
+end
+
+% Add Terminal Cost
+if(~tracking)  
+    k = N+1;
+    st = X(:,k);
+    obj = obj+(st-P(n_states+1:2*n_states))'*P_weight*(st-P(n_states+1:2*n_states)); % calculate obj
 end
 
 % CONSTRAINT: divergence constraint (from MPC-CDF paper)
@@ -149,27 +168,32 @@ for k = 1:N
 end
 
 % CONSTRAINT: rho(k+1) > rho(k)
+% for k = 1:N
+%     rho = RHO(:,k); 
+%     rho_next = RHO(:,k+1);
+% 
+%     % form constraint
+%     slack = dt*C(k)*rho;
+%     rho_increase = rho_next - rho - slack;
+%     constraints = [constraints; rho_increase];
+% end
+
+% CONSTRAINT:  b(x_k)*rho_k <= gamma
+traversability = 0;
 for k = 1:N
+    st = X(:,k); 
     rho = RHO(:,k); 
-    rho_next = RHO(:,k+1);
-
-    % form constraint
-    slack = dt*C(k)*rho;
-    rho_increase = rho_next - rho - slack;
-    constraints = [constraints; rho_increase];
+    
+    num_centers = size(centers, 1);
+    rbf_values = SX.zeros(1, num_centers);
+    for i = 1:num_centers
+        diff = st' - centers(i, :);
+        rbf_values(i) = exp(-sum(diff.^2, 2) / (2 * sigma^2));
+    end
+    b_x = rbf_values * weights; % height estimate
+    traversability = traversability + b_x * rho;
 end
-
-% CONSTRAINT:  b(x_k)*rho_k >= gamma
-gamma = 0.5;
-for k = 1:N
-    rho = RHO(:,k); 
-    rho_next = RHO(:,k+1);
-
-    % form constraint
-    slack = dt*C(k)*rho;
-    rho_increase = rho_next - rho - slack;
-    constraints = [constraints; rho_increase];
-end
+constraints = [constraints; traversability];
 
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
@@ -185,19 +209,27 @@ opts.ipopt.acceptable_tol =1e-8;
 opts.ipopt.acceptable_obj_change_tol = 1e-6;
 
 solver = nlpsol('solver', 'ipopt', nlp_prob,opts);
-
 args = struct;
-args.lbg(1:n_states*(N+1)) = 0; % equality constraints
-args.ubg(1:n_states*(N+1)) = 0; % equality constraints
 
+%------------------- equality constraints -------------------------------
+args.lbg(1:n_states*(N+1)) = 0; 
+args.ubg(1:n_states*(N+1)) = 0;
+
+%------------------ inequality constraints -------------------------------
 % bounds for CONSTRAINT: divergence constriant from MPC-CDF paper
-args.lbg(n_states*(N+1)+1 : n_states*(N+1)+N) = 0; % inequality constraints
-args.ubg(n_states*(N+1)+1 : n_states*(N+1)+N) = inf; % inequality constraints
+args.lbg(n_states*(N+1)+1 : n_states*(N+1)+N) = 0; 
+args.ubg(n_states*(N+1)+1 : n_states*(N+1)+N) = inf; 
 
 % bounds for CONSTRAINT: rho(k+1) > rho(k)
-args.lbg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = 0; % inequality constraints
-args.ubg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = inf; % inequality constraints
+% args.lbg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = 0;
+% args.ubg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = inf; 
 
+% % bounds for CONSTRAINT: b(x(k))*rho(k) <= gamma
+% one constraint for entire horizon (sum over horizon)
+args.lbg(n_states*(N+1)+N+1) = 0; 
+args.ubg(n_states*(N+1)+N+1) = gamma; % 
+
+% ------------------- bounds ----------------------------------------------
 args.lbx(1:n_states:n_states*(N+1),1) = xmin(1); %state x lower bound
 args.ubx(1:n_states:n_states*(N+1),1) = xmax(1); %state x upper bound
 args.lbx(2:n_states:n_states*(N+1),1) = xmin(2); %state y lower bound
@@ -213,7 +245,6 @@ args.ubx(n_states*(N+1)+n_controls*N+1:n_states*(N+1)+n_controls*N+N,1) = inf; %
 
 args.lbx(n_states*(N+1)+n_controls*N+N+1:n_states*(N+1)+n_controls*N+N+N+1,1) = rho_min(1); %rho lower bound
 args.ubx(n_states*(N+1)+n_controls*N+N+1:n_states*(N+1)+n_controls*N+N+N+1,1) = rho_max(1); %rho upper bound
-
 
 %% Simulate MPC controller with AUV dynamics
 % init
@@ -293,13 +324,14 @@ delete(F);
 %% ---------------- plot 2D trajectory ----------------------  
 
 figure(1)
-        
-% plot obstacles
-% xc = obs1(1); yc = obs1(2); Rc = obs1(3);
-% angles = (0:100-1)*(2*pi/100);
-% points = [xc;yc] + [Rc*cos(angles);Rc*sin(angles)];
-% P = polyshape(points(1,:), points(2,:));
-% plot(P, 'FaceColor', obsColor, 'LineWidth', 2, 'FaceAlpha', 1.0); hold on;
+% plot heightmap
+[x, y] = meshgrid(1:cols, 1:rows);
+surf(x, y, height_map, 'FaceAlpha', 0.5);
+xlabel('X');
+ylabel('Y');
+zlabel('Height');
+view(2)
+hold on
 
 % plot x-y-z trajecotry
 traj = plot(xlog(1,:), xlog(2,:),'LineWidth', 2,'Color',red);

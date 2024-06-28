@@ -36,7 +36,7 @@ tracking = 0; % set to 1 to track a ref traj
 
 %---------- MPC setup ----------------------
 time_total = 10; % time for the total steps, equal to tsim
-N = 10; % for mismatch use N = 100
+N = 2; % for mismatch use N = 100
 dt = 0.01; % use dt = 0.1 for cbf and vanilla obs
 Q = 10*diag([10,10]);
 R = 1e-2*diag([1, 1]);
