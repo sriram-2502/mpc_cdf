@@ -2,8 +2,8 @@ clc;
 clear;
 close all;
 import casadi.*
-addpath dynamics\ density_functions\ barrier_functions\
-
+addpath dynamics\ density_functions\ barrier_functions\ utils\ utils\
+ 
 % setup colors for plots
 colors = colororder;
 blue = colors(1,:);
