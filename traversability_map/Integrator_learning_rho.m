@@ -29,23 +29,23 @@ n_controls = length(controls);
 
 % ------------- env setup --------------
 % initial Conditions on a grid
-x0 = [0;0.01]; x_ini = x0;
-xf = [2;1]; % target
+x0 = [2;10]; x_ini = x0;
+xf = [15;11]; % target
 rho_0 = 1e-2;
-tracking = 0; % set to 1 to track a ref traj
 
 %---------- MPC setup ----------------------
 time_total = 10; % time for the total steps, equal to tsim
-N = 5; % for mismatch use N = 100
-dt = 0.01; % use dt = 0.1 for cbf and vanilla obs
-Q = 10*diag([10,10]);
-R = 1e-2*diag([1, 1]);
-P_weight = 100*diag([10,10]); % terminal cost
+tracking = 0; % set to 1 to track a ref traj
+N = 10; 
+dt = 0.01; 
+Q = 1*diag([1,1]);
+R = 1*diag([1, 1]);
+P_weight = 100*diag([1,1]); % terminal cost
 C_t = 0.1;
 
 xmin = [-inf; -inf];
 xmax = -xmin;
-umin = [-inf; -inf];
+umin = [-5; -5];
 umax = -umin;
 rho_min = 1e-2;
 rho_max = 1e3;
@@ -246,7 +246,6 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
             y_ref = 1;
             if(x_ref >=12)
                 xref  = 12;
-                y_ref = 12;
             end
             args.p(n_states*k+1:n_states*k+n_states) = [x_ref, y_ref];
         end    
