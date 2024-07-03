@@ -2,7 +2,7 @@ clc;
 clear;
 close all;
 import casadi.*
-% addpath dynamics\ density_functions\ barrier_functions\ utils\
+addpath ..\dynamics\ ..\density_functions\ ..\barrier_functions\ ..\utils\
 
 % setup colors for plots
 colors = colororder;
@@ -27,14 +27,33 @@ rho_bar2 = SX.sym('rho_bar2');
 controls = [rho_bar1;rho_bar2];
 n_controls = length(controls);
 
+%---------- MPC setup ----------------------
+time_total = 3; % time for the total steps, equal to tsim
+tracking = 0; % set to 1 to track a ref traj
+N = 10; gamma = 1;
+dt = 0.1; dt_sim = 0.01;
+Q = 1*diag([1,1]);
+R = 1*diag([1, 1]);
+P_terminal = 1e2*diag([1,1]); % terminal cost
+P_trav = 1e2; % weight on trav cost
+P_rho = 0.1; % cost on rho
+C_t = 0.1;
+
+xmin = [-inf; -inf];
+xmax = -xmin;
+umin = [-1; -1];
+umax = -umin;
+rho_min = 1e-1;
+rho_max = 1e2;
+
 % ------------- env setup -------------------------------------------------
 % initial Conditions on a grid
-x0 = [2;12]; x_ini = x0;
-xf = [15;11]; % target
-rho_0 = 1e-2;
+x0 = [2;20]; x_ini = x0;
+xf = [27;11]; % target
+rho_0 = rho_min;
 
 % ------------- load height map and fit rbfs ------------------------------
-grid_map = readmatrix('Terrain Map.xlsx','Sheet','center_hill');
+grid_map = readmatrix('Terrain Map.xlsx','Sheet','hill_and_pit');
 max_val = max(grid_map,[],"all");
 height_map = grid_map./max_val;
 [rows, cols] = size(height_map);
@@ -44,24 +63,9 @@ grid_spacing = 1; sigma = 1;
 [center_x, center_y] = meshgrid(1:grid_spacing:cols, 1:grid_spacing:rows);
 centers = [center_x(:), center_y(:)];
 % Fit RBFs and get the weights
+tic
 weights = fit_rbf(height_map, centers, sigma);
-
-%---------- MPC setup ----------------------
-time_total = 3; % time for the total steps, equal to tsim
-tracking = 0; % set to 1 to track a ref traj
-N = 10; gamma = 1;
-dt = 0.1; 
-Q = 1*diag([1,1]);
-R = 1*diag([1, 1]);
-P_weight = 100*diag([1,1]); % terminal cost
-C_t = 0.1;
-
-xmin = [-inf; -inf];
-xmax = -xmin;
-umin = [-5; -5];
-umax = -umin;
-rho_min = 1e-2;
-rho_max = 1e3;
+toc
 
 %% Dynamics Setup (for divergence constraint)
 % dynamics without paramter mismatch
@@ -137,7 +141,8 @@ for k = 1:N
         % for point stabilization
         q_x = (st-P(n_states+1:2*n_states))'*Q*(st-P(n_states+1:2*n_states));
     end
-    obj = obj + q_x*rho + (con'*R*con)/rho;
+%     obj = obj + q_x*rho + (con'*R*con)/rho;
+    obj = obj + q_x + (con'*R*con) + rho'*P_rho*rho;
     
     % CONSTRAINT: get dynamics constraint
     % x(k+1) = F(x(k),u(k))
@@ -151,7 +156,8 @@ end
 if(~tracking)  
     k = N+1;
     st = X(:,k);
-    obj = obj+(st-P(n_states+1:2*n_states))'*P_weight*(st-P(n_states+1:2*n_states)); % calculate obj
+    terminal_cost = (st-P(n_states+1:2*n_states))'*P_terminal*(st-P(n_states+1:2*n_states)); % calculate obj
+    obj = obj + terminal_cost;
 end
 
 % CONSTRAINT: divergence constraint (from MPC-CDF paper)
@@ -172,8 +178,7 @@ end
 %     rho_next = RHO(:,k+1);
 % 
 %     % form constraint
-%     slack = dt*C(k)*rho;
-%     rho_increase = rho_next - rho - slack;
+%     rho_increase = rho_next - rho;
 %     constraints = [constraints; rho_increase];
 % end
 
@@ -189,9 +194,11 @@ for k = 1:N
         rbf_values(i) = exp(-sum(diff.^2, 2) / (2 * sigma^2));
     end
     b_x = rbf_values * weights; % height estimate
-    traversability = traversability + b_x * rho;
+%     traversability = traversability + b_x*rho;
+    traversability = traversability + b_x;
 end
-constraints = [constraints; traversability];
+% constraints = [constraints; traversability];
+obj = obj + P_trav*traversability;
 
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
@@ -209,7 +216,7 @@ opts.ipopt.acceptable_obj_change_tol = 1e-6;
 solver = nlpsol('solver', 'ipopt', nlp_prob,opts);
 args = struct;
 
-%------------------- equality constraints -------------------------------
+%------------------- equality constraints for dyanmics -------------------------------
 args.lbg(1:n_states*(N+1)) = 0; 
 args.ubg(1:n_states*(N+1)) = 0;
 
@@ -218,14 +225,14 @@ args.ubg(1:n_states*(N+1)) = 0;
 args.lbg(n_states*(N+1)+1 : n_states*(N+1)+N) = 0; 
 args.ubg(n_states*(N+1)+1 : n_states*(N+1)+N) = inf; 
 
-% % bounds for CONSTRAINT: rho(k+1) > rho(k)
+% bounds for CONSTRAINT: rho(k+1) > rho(k)
 % args.lbg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = 0;
 % args.ubg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = inf; 
 
 % bounds for CONSTRAINT: b(x(k))*rho(k) <= gamma
 % one constraint for entire horizon (sum over horizon)
-args.lbg(n_states*(N+1)+N+1) = 0; 
-args.ubg(n_states*(N+1)+N+1) = gamma; 
+% args.lbg(n_states*(N+1)+N+1) = 0; 
+% args.ubg(n_states*(N+1)+N+1) = gamma; 
 
 % ------------------- bounds ----------------------------------------------
 args.lbx(1:n_states:n_states*(N+1),1) = xmin(1); %state x lower bound
@@ -266,9 +273,10 @@ mpciter = 1;
 w_bar = waitbar(0,'1','Name','Simulating MPC-CDF...',...
     'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
 
-while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
-    max_iter = time_total/dt;
-    current_time = mpciter*dt;
+while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt_sim)
+    tic
+    max_iter = time_total/dt_sim;
+    current_time = mpciter*dt_sim;
     waitbar(mpciter/max_iter,w_bar,sprintf(string(mpciter)+'/'+string(max_iter)))
     
     % set the values of the parameters vector
@@ -276,7 +284,7 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
         % get ref trjaectory for states
         args.p(1:n_states) = x0;
         for k=1:N
-            t_predict = current_time + (k-1)*dt;
+            t_predict = current_time + (k-1)*dt_sim;
             x_ref = 0.5*t_predict;
             y_ref = 1;
             if(x_ref >=12)
@@ -298,9 +306,10 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     u = reshape(full(sol.x(n_states*(N+1)+1:n_states*(N+1)+n_controls*N))',n_controls,N)'; 
     rho = reshape(full(sol.x(end-N:end))',1,N+1)';
     C_0 = reshape(full(sol.x(end-N+1:end))',1,N);   
+    toc
     
     % Apply the control and shift the solution
-    [t0, x0, u0] = shift_density(dt, t0, x0, u, F, rho);
+    [t0, x0, u0] = shift_density(dt_sim, t0, x0, u, F, rho);
     
     % logging
     xlog(:,mpciter+1) = x0;
@@ -319,8 +328,9 @@ F = findall(0,'type','figure','tag','TMWWaitbar');
 delete(F);
 
 %% ---------------- plot 2D trajectory ----------------------  
-
+close all
 figure(1)
+subplot(1,2,1)
 % plot heightmap
 [x, y] = meshgrid(1:cols, 1:rows);
 surf(x, y, height_map, 'FaceAlpha', 0.5);
@@ -343,12 +353,53 @@ plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColo
 %setup plots
 axes1 = gca;
 box(axes1,'on');
-axis(axes1,'equal');
-grid on;
+axis(axes1,'square');
 
 hold(axes1,'off');
-xlabel('Position, $x$ (m)','interpreter','latex', 'FontSize', 20);
-ylabel('Position, $y$ (m)','interpreter','latex', 'FontSize', 20);
+xlabel('position, $x$ (m)','interpreter','latex', 'FontSize', 20);
+ylabel('position, $y$ (m)','interpreter','latex', 'FontSize', 20);
+
+%%%%%%%%%%%%%%
+subplot(1,2,2)
+% plot heightmap reconstructed using rbfs
+% Generate a fine grid of coordinates
+[x_fine, y_fine] = meshgrid(linspace(1, cols, 10*cols), linspace(1, rows, 10*rows));
+coordinates_fine = [x_fine(:), y_fine(:)];
+
+% Reconstruct the height map using the RBFs and weights on the fine grid
+num_centers = size(centers, 1);
+rbf_matrix_fine = zeros(size(coordinates_fine, 1), num_centers);
+for i = 1:num_centers
+    diff = coordinates_fine - centers(i, :);
+    rbf_matrix_fine(:, i) = exp(-sum(diff.^2, 2) / (2 * sigma^2));
+end
+fitted_height_map_fine = reshape(rbf_matrix_fine * weights, size(x_fine));
+
+surf(x_fine, y_fine, fitted_height_map_fine, 'FaceAlpha', 0.5, 'EdgeColor','none');
+xlabel('X');
+ylabel('Y');
+zlabel('Height');
+view(2)
+hold on
+
+% plot x-y-z trajecotry
+traj = plot(xlog(1,:), xlog(2,:),'o-','LineWidth', 2,'Color',red);
+xlabel('x(m)','interpreter','latex','FontSize',20);
+ylabel('y(m)','interpreter','latex','FontSize',20);
+hold on
+
+% plot start and target 
+plot(x_ini(1), x_ini(2), 'o', 'MarkerSize',10, 'MarkerFaceColor','black','MarkerEdgeColor','black'); hold on;
+plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
+
+%setup plots
+axes1 = gca;
+box(axes1,'on');
+axis(axes1,'square');
+
+hold(axes1,'off');
+xlabel('position, $x$ (m)','interpreter','latex', 'FontSize', 20);
+ylabel('position, $y$ (m)','interpreter','latex', 'FontSize', 20);
 
 %% plot ctrol and density functions vs time
 figure(2)
