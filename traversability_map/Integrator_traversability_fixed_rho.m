@@ -34,14 +34,14 @@ controls = [u1;u2];
 n_controls = length(controls);
 
 %---------- MPC setup ----------------------
-time_total = 25; % time for the total steps, equal to tsim
+time_total = 30; % time for the total steps, equal to tsim
 tracking = 1; % set to 1 to track a ref traj
 N = 10;
 dt = 0.1; dt_sim = 0.1;
 Q = 10*diag([1,1]);
 R = 1*diag([1, 1]);
 P_terminal = 10*diag([1,1]); % terminal cost
-P_trav = 1e1; % weight on trav cost
+P_trav = 1e2; % weight on trav cost
 C_t = 0.1;
 
 xmin = [-inf; -inf];
@@ -52,7 +52,7 @@ umax = -umin;
 % ------------- env setup -------------------------------------------------
 % initial Conditions on a grid
 x0 = [1;13]; x_ini = x0;
-xf = [25;15]; % target
+xf = [30;13]; % target
 
 % ------------- load height map and fit rbfs ------------------------------
 grid_map = readmatrix('Terrain Map.xlsx','Sheet','hill_and_pit');
@@ -272,15 +272,19 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt_sim)
     if(tracking)
         % get ref trjaectory for states
         args.p(1:n_states) = x0;
-        for k=1:N
-            t_predict = current_time + (k-1)*dt_sim;
-            x_ref = x0(1) + 2*t_predict;
-            y_ref = x0(2);
-            if(x_ref >= 25)
-                xref  = 25;
-            end
-            args.p(n_states*k+1:n_states*k+n_states) = [x_ref, y_ref];
-        end    
+%         for k=1:N
+%             t_predict = current_time + (k-1)*dt_sim;
+%             x_ref = x0(1) + 2*t_predict;
+%             y_ref = x0(2);
+%             if(x_ref >= 25)
+%                 xref  = 25;
+%             end
+%             args.p(n_states*k+1:n_states*k+n_states) = [x_ref, y_ref];
+%         end
+        t_predict = current_time + N*dt_sim;
+        x_target = [2*t_predict; 13];
+        x_ref = generate_reference(x0, x_target, N, dt);
+        args.p(n_states+1:n_states+N*n_states) = x_ref(:);
     else
         args.p   = [x0;xf]; % for point stabilization
     end
