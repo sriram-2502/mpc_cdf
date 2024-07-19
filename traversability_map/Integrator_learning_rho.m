@@ -2,7 +2,13 @@ clc;
 clear;
 close all;
 import casadi.*
-% addpath dynamics\ density_functions\ barrier_functions\ utils\
+addpath ..\dynamics\ ..\density_functions\ ..\barrier_functions\ ..\utils\
+
+% Set defaults
+set(0, 'DefaultFigureColor', 'w');
+set(0, 'DefaultAxesColor', 'w');
+set(0, 'DefaultLineLineWidth', 2);
+set(0, 'DefaultAxesLineWidth', 1);
 
 % setup colors for plots
 colors = colororder;
@@ -207,7 +213,6 @@ args.ubx(n_states*(N+1)+n_controls*N+1:n_states*(N+1)+n_controls*N+N,1) = inf; %
 
 args.lbx(n_states*(N+1)+n_controls*N+N+1:n_states*(N+1)+n_controls*N+N+N+1,1) = rho_min(1); %rho lower bound
 args.ubx(n_states*(N+1)+n_controls*N+N+1:n_states*(N+1)+n_controls*N+N+N+1,1) = rho_max(1); %rho upper bound
-
 
 %% Simulate MPC controller with AUV dynamics
 % init

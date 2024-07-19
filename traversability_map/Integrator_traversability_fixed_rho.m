@@ -23,7 +23,7 @@ obsColor = [.7 .7 .7]; % Obstacle color -> Grey
 % states for integrator
 x = SX.sym('x');
 y = SX.sym('y');
-rho = SX.sym('rho');
+
 states = [x; y];
 n_states = length(states);
 
@@ -34,29 +34,25 @@ controls = [u1;u2];
 n_controls = length(controls);
 
 %---------- MPC setup ----------------------
-time_total = 20; % time for the total steps, equal to tsim
-tracking = 10; % set to 1 to track a ref traj
-N = 10; gamma = 1;
+time_total = 25; % time for the total steps, equal to tsim
+tracking = 1; % set to 1 to track a ref traj
+N = 10;
 dt = 0.1; dt_sim = 0.1;
-Q = 1*diag([1,1]);
+Q = 10*diag([1,1]);
 R = 1*diag([1, 1]);
-P_terminal = 1e2*diag([1,1]); % terminal cost
+P_terminal = 10*diag([1,1]); % terminal cost
 P_trav = 1e1; % weight on trav cost
-P_rho = 0.1; % cost on rho
 C_t = 0.1;
 
 xmin = [-inf; -inf];
 xmax = -xmin;
 umin = [-1; -1];
 umax = -umin;
-rho_min = 1e-1;
-rho_max = 1e2;
 
 % ------------- env setup -------------------------------------------------
 % initial Conditions on a grid
 x0 = [1;13]; x_ini = x0;
-xf = [27;11]; % target
-rho_0 = rho_min;
+xf = [25;15]; % target
 
 % ------------- load height map and fit rbfs ------------------------------
 grid_map = readmatrix('Terrain Map.xlsx','Sheet','hill_and_pit');
@@ -69,9 +65,12 @@ grid_spacing = 1; sigma = 1;
 [center_x, center_y] = meshgrid(1:grid_spacing:cols, 1:grid_spacing:rows);
 centers = [center_x(:), center_y(:)];
 % Fit RBFs and get the weights
-tic
 weights = fit_rbf(height_map, centers, sigma);
-toc
+
+% ------------ Density function setup ------------
+b_x = query_rbf_height(states', weights, centers, sigma);
+rho_trav = 1 - b_x;
+rho_trav = Function('rho',{states},{rho_trav}); 
 
 %% Dynamics Setup (for divergence constraint)
 % dynamics without paramter mismatch
@@ -106,9 +105,6 @@ g = Function('g',{states},{g});
 % A vector that represents the states over the optimization problem.
 X = SX.sym('X',n_states,(N+1));
 
-% Decision variables for density function values
-RHO = SX.sym('rho',1,(N+1));
-
 % Decision variables for control (rho bar)
 U = SX.sym('U',n_controls, N); 
 
@@ -135,7 +131,6 @@ constraints = [constraints;st-P(1:n_states)];
 % compute running cost and dynamics constraint
 for k = 1:N
     st = X(:,k);
-    rho = RHO(:,k);
     con = U(:,k);
     
     % COST: get cost function
@@ -148,7 +143,7 @@ for k = 1:N
         q_x = (st-P(n_states+1:2*n_states))'*Q*(st-P(n_states+1:2*n_states));
     end
 %     obj = obj + q_x*rho + (con'*R*con)/rho;
-    obj = obj + q_x + (con'*R*con) + rho'*P_rho*rho;
+    obj = obj + q_x + (con'*R*con);
     
     % CONSTRAINT: get dynamics constraint
     % x(k+1) = F(x(k),u(k))
@@ -170,7 +165,10 @@ end
 for k = 1:N
     % get current and next state
     st = X(:,k); st_next = X(:,k+1);
-    rho = RHO(:,k); rho_next = RHO(:,k+1);
+    
+    % get current and next rho
+    rho = rho_trav(st');
+    rho_next = rho_trav(st_next');
 
     % form density constraint
     density_constraint = (rho_next-rho) + dt*(div_f_discrete(st)+div_g_discrete(st))*rho;
@@ -178,23 +176,13 @@ for k = 1:N
     constraints = [constraints; density_constraint - slack];
 end
 
-% % CONSTRAINT: rho(k+1) > rho(k)
-% for k = 1:N
-%     rho = RHO(:,k); 
-%     rho_next = RHO(:,k+1);
-% 
-%     % form constraint
-%     rho_increase = rho_next - rho;
-%     constraints = [constraints; rho_increase];
-% end
-
 % CONSTRAINT/Obj:  b(x_k)*rho_k <= gamma
 traversability = 0;
 num_centers = size(centers, 1);
 rbf_values = SX.zeros(1, num_centers);
 for k = 1:N
     st = X(:,k); 
-    rho = RHO(:,k); 
+    rho = rho_trav(st'); 
     for i = 1:num_centers
         diff = st' - centers(i, :);
         rbf_values(i) = exp(-sum(diff.^2, 2) / (2 * sigma^2));
@@ -209,7 +197,7 @@ obj = obj + P_trav*traversability;
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
 OPT_variables = [reshape(X,n_states*(N+1),1); reshape(U,n_controls*N,1);...
-    reshape(C,N,1); reshape(RHO,N+1,1);];
+    reshape(C,N,1);];
 nlp_prob = struct('f', obj, 'x', OPT_variables, 'g', constraints, 'p', P);
 
 opts = struct;
@@ -231,10 +219,6 @@ args.ubg(1:n_states*(N+1)) = 0;
 args.lbg(n_states*(N+1)+1 : n_states*(N+1)+N) = 0; 
 args.ubg(n_states*(N+1)+1 : n_states*(N+1)+N) = inf; 
 
-% bounds for CONSTRAINT: rho(k+1) > rho(k)
-% args.lbg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = 0;
-% args.ubg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = inf; 
-
 % bounds for CONSTRAINT: b(x(k))*rho(k) <= gamma
 % one constraint for entire horizon (sum over horizon)
 % args.lbg(n_states*(N+1)+N+1) = 0; 
@@ -254,9 +238,6 @@ args.ubx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umax(2); %
 args.lbx(n_states*(N+1)+n_controls*N+1:n_states*(N+1)+n_controls*N+N,1) = 0; %C lower bound
 args.ubx(n_states*(N+1)+n_controls*N+1:n_states*(N+1)+n_controls*N+N,1) = inf; %C upper bound
 
-args.lbx(n_states*(N+1)+n_controls*N+N+1:n_states*(N+1)+n_controls*N+N+N+1,1) = rho_min(1); %rho lower bound
-args.ubx(n_states*(N+1)+n_controls*N+N+1:n_states*(N+1)+n_controls*N+N+N+1,1) = rho_max(1); %rho upper bound
-
 %% Simulate MPC controller
 % init
 t0 = 0;
@@ -264,7 +245,6 @@ t(1) = t0;
 u0 = zeros(N,n_controls);
 X0 = repmat(x0,1,N+1)';
 C_0 = repmat(C_t,1,N);
-RHO_0 = repmat(rho_0,1,N+1)';
 tstart = 0; tend = dt_sim;
 
 % logging
@@ -274,7 +254,8 @@ rho_sol = [];
 C_log = [];
 tlog = [];
 xlog(:,1) = x0; 
-rho_log(:,1) = rho_0;
+rho_log = [];
+rho_log = [rho_log, rho_trav(x0')];
 tlog(1) = t0;
 
 % Start MPC
@@ -283,7 +264,6 @@ w_bar = waitbar(0,'1','Name','Simulating MPC-CDF...',...
     'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
 
 while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt_sim)
-    tic
     max_iter = time_total/dt_sim;
     current_time = mpciter*dt_sim;
     waitbar(mpciter/max_iter,w_bar,sprintf(string(mpciter)+'/'+string(max_iter)))
@@ -294,8 +274,8 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt_sim)
         args.p(1:n_states) = x0;
         for k=1:N
             t_predict = current_time + (k-1)*dt_sim;
-            x_ref = 2*t_predict;
-            y_ref = 13;
+            x_ref = x0(1) + 2*t_predict;
+            y_ref = x0(2);
             if(x_ref >= 25)
                 xref  = 25;
             end
@@ -307,20 +287,15 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt_sim)
     
     % initial value of the optimization variables
     args.x0  = [reshape(X0',n_states*(N+1),1);reshape(u0',n_controls*N,1);...
-        reshape(C_0',N,1);reshape(RHO_0',(N+1),1)];
+        reshape(C_0',N,1)];
     sol = solver('x0', args.x0, 'lbx', args.lbx, 'ubx', args.ubx,...
         'lbg', args.lbg, 'ubg', args.ubg, 'p', args.p);
     
     % get solutions
     u = reshape(full(sol.x(n_states*(N+1)+1:n_states*(N+1)+n_controls*N))',n_controls,N)'; 
-    rho = reshape(full(sol.x(end-N:end))',1,N+1)';
     C_0 = reshape(full(sol.x(end-N+1:end))',1,N);   
-    toc
     
-    % Apply the control and shift the solution
-%     [t0, x0, u0] = shift(dt_sim, t0, x0, u, F);
-    
-    u_star = u(1,:)'/rho(1);
+    u_star = u(1,:);
     [t,X] = ode45(@(t,x)full(F(x,u_star)),[tstart,tend],x0);
     % --- update ---
     x0 = X(end,:)';
@@ -330,7 +305,7 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt_sim)
     
     % logging
     xlog(:,mpciter+1) = x0;
-    rho_log(:,mpciter+1) = rho(1);
+    rho_log = [rho_log, rho_trav(x0')];
     u_cl= [u_cl ; u(1,:)];
     tlog(mpciter+1) = t0;
     C_log = [C_log; C_0];
@@ -402,7 +377,7 @@ view(2)
 hold on
 
 % plot x-y-z trajecotry
-traj = plot(xlog(1,:), xlog(2,:),'o-','LineWidth', 2,'Color',red);
+traj = plot(xlog(1,:), xlog(2,:),'-','LineWidth', 2,'Color',red);
 xlabel('x(m)','interpreter','latex','FontSize',20);
 ylabel('y(m)','interpreter','latex','FontSize',20);
 hold on
@@ -433,24 +408,25 @@ lgd = legend('x','y');
 lgd.Interpreter = 'latex';
 lgd.FontSize = 15;
 grid on
-xlim([0,20])
+xlim([0,time_total])
 
 subplot(3,2,[3,4])
 plot(tlog(1:end-1), u_cl(:,1),'LineWidth', 2,'Color',blue); hold on;
 plot(tlog(1:end-1), u_cl(:,2),'LineWidth', 2,'Color',red);
 xlabel('time (s)','interpreter','latex', 'FontSize', 20);
+ylabel('control (m/s)','interpreter','latex', 'FontSize', 20);
 lgd = legend('$u_1$','$u_2$');
 lgd.Interpreter = 'latex';
 lgd.FontSize = 15;
 grid on
-xlim([0,20])
+xlim([0,time_total])
 
 subplot(3,2,[5,6])
-plot(tlog, rho_log, 'LineWidth', 2,'Color',blue);
+plot(tlog, full(rho_log), 'LineWidth', 2,'Color',blue);
 xlabel('time (s)','interpreter','latex', 'FontSize', 20);
 ylabel('density, $\rho(x)$','interpreter','latex', 'FontSize', 20);
 lgd = legend('$\rho$');
 lgd.Interpreter = 'latex';
 lgd.FontSize = 15;
 grid on
-xlim([0,20])
+xlim([0,time_total])
