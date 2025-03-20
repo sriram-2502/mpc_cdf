@@ -30,7 +30,7 @@ n_controls = length(controls);
 
 %---------- MPC setup ----------------------
 time_total = 20; % time for the total steps, equal to tsim
-N = 10; % for mismatch use N = 100
+N = 100; % for mismatch use N = 100
 dt = 0.02; % use dt = 0.1 for cbf and vanilla obs
 o = 1;
 Q = 10*diag([10,10,o,o]);
@@ -69,8 +69,7 @@ rho_circle = Function('b',{states,obs},{rho_circle});
 
 %% Dynamics Setup 
 % dynamics without paramter mismatch
-mismatch = 0;
-[dx_dt,f,g] = unicycle_dynamics(states, controls, mismatch);
+[dx_dt,f,g] = unicycle_dynamics(states, controls);
 f_discrete = dt*f + states;
 g_discrete = dt*g;
 
@@ -219,7 +218,7 @@ mpciter = 0;
 xx1 = [];
 u_cl=[];
 C_log = [];
-solve_times =[];
+
 w_bar = waitbar(0,'1','Name','Simulating MPC-CDF...',...
     'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
 
@@ -231,11 +230,8 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
 
     % initial value of the optimization variables
     args.x0  = [reshape(X0',n_states*(N+1),1);reshape(u0',n_controls*N,1);reshape(C_0',N,1)];
-    tic
     sol = solver('x0', args.x0, 'lbx', args.lbx, 'ubx', args.ubx,...
         'lbg', args.lbg, 'ubg', args.ubg,'p',args.p);
-    sol_time = toc;
-    solve_times = [solve_times; sol_time];
     u = reshape(full(sol.x(n_states*(N+1)+1:end-N))',n_controls,N)'; % get controls only from the solution
     xx1(:,1:n_states,mpciter+1)= reshape(full(sol.x(1:n_states*(N+1)))',n_states,N+1)'; % get solution TRAJECTORY
     u_cl= [u_cl ; u(1,:)];
