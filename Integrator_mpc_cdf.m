@@ -14,31 +14,29 @@ obsColor = [.7 .7 .7]; % Obstacle color -> Grey
 
 %% Setup Parameters
 % ---------- system setup ---------------
-% states for AUV
+% states for integrator
 x = SX.sym('x');
 y = SX.sym('y');
-theta = SX.sym('theta');
-v = SX.sym('v');
-states = [x; y; theta; v];
+states = [x; y;];
 n_states = length(states);
 
 % control Inputs for AUV
-w = SX.sym('w');
-a = SX.sym('a');
-controls = [w;a];
+u1 = SX.sym('u1');
+u2 = SX.sym('u2');
+controls = [u1;u2];
 n_controls = length(controls);
 
 %---------- MPC setup ----------------------
 time_total = 20; % time for the total steps, equal to tsim
-N = 100; % for mismatch use N = 100
+N = 5; % for mismatch use N = 100
 dt = 0.02; % use dt = 0.1 for cbf and vanilla obs
 o = 1;
-Q = 10*diag([10,10,o,o]);
-P_weight = 100*diag([10,10,o,o]);
+Q = 10*diag([10,10]);
+P_weight = 100*diag([10,10]);
 R = 1*diag([1, 1]);
 C_t = 0.1;
 
-xmin = [-inf; -inf; -inf; -inf];
+xmin = [-inf; -inf];
 xmax = -xmin;
 
 umin = [-inf; -inf];
@@ -46,8 +44,8 @@ umax = -umin;
 
 % ----------- Environment setup --------------------
 % initial Conditions on a grid
-x0 = [0;0.01;0;0]; x_ini = x0;
-xf = [10;0;0;0]; % target
+x0 = [0;0.01]; x_ini = x0;
+xf = [10;0]; % target
 
 obs_x = SX.sym('obs_x');
 obs_y = SX.sym('obs_y');
@@ -69,7 +67,7 @@ rho_circle = Function('b',{states,obs},{rho_circle});
 
 %% Dynamics Setup 
 % dynamics without paramter mismatch
-[dx_dt,f,g] = unicycle_dynamics(states, controls);
+[dx_dt,f,g] = integrator_dynamics(states, controls);
 f_discrete = dt*f + states;
 g_discrete = dt*g;
 
@@ -190,16 +188,12 @@ args.lbx(1:n_states:n_states*(N+1),1) = xmin(1); %state x lower bound
 args.ubx(1:n_states:n_states*(N+1),1) = xmax(1); %state x upper bound
 args.lbx(2:n_states:n_states*(N+1),1) = xmin(2); %state y lower bound
 args.ubx(2:n_states:n_states*(N+1),1) = xmax(2); %state y upper bound
-args.lbx(3:n_states:n_states*(N+1),1) = xmin(3); %state theta lower bound
-args.ubx(3:n_states:n_states*(N+1),1) = xmax(3); %state theta upper bound
-args.lbx(4:n_states:n_states*(N+1),1) = xmin(4); %state velocity lower bound
-args.ubx(4:n_states:n_states*(N+1),1) = xmax(4); %state velocity upper bound
 
 
-args.lbx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umin(1); %v lower bound
-args.ubx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umax(1); %v upper bound
-args.lbx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umin(2); %w lower bound
-args.ubx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umax(2); %w upper bound
+args.lbx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umin(1); %u1 lower bound
+args.ubx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umax(1); %u1 upper bound
+args.lbx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umin(2); %u2 lower bound
+args.ubx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umax(2); %u2 upper bound
 
 args.lbx(n_states*(N+1)+n_controls*N+1:1:n_states*(N+1)+n_controls*N+N,1) = 0; %C lower bound
 args.ubx(n_states*(N+1)+n_controls*N+1:1:n_states*(N+1)+n_controls*N+N,1) = inf; %C upper bound
@@ -260,10 +254,16 @@ delete(F);
 %% ---------------- plot 2D trajectory ----------------------  
 
 figure(1)
-
 % For legend as rectangular object can't be defined as a legend
     dummy_marker = plot(NaN,NaN, 'o','MarkerSize', 10, 'MarkerEdgeColor',...
             'black', 'MarkerFaceColor',obsColor, 'LineWidth', 1.5); 
+        
+% plot obstacles
+xc = obs1(1); yc = obs1(2); Rc = obs1(3);
+angles = (0:100-1)*(2*pi/100);
+points = [xc;yc] + [Rc*cos(angles);Rc*sin(angles)];
+P = polyshape(points(1,:), points(2,:));
+plot(P, 'FaceColor', obsColor, 'LineWidth', 2, 'FaceAlpha', 1.0); hold on;
 
 % plot x-y-z trajecotry
 traj = plot(xlog(1,:), xlog(2,:),'LineWidth', 2,'Color',red);
@@ -275,12 +275,6 @@ hold on
 % plot(x_ini(1), x_ini(2), 'o', 'MarkerSize',10, 'MarkerFaceColor','black','MarkerEdgeColor','black'); hold on;
 % plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
 
-% plot obstacles
-xc = obs1(1); yc = obs1(2); Rc = obs1(3);
-angles = (0:100-1)*(2*pi/100);
-points = [xc;yc] + [Rc*cos(angles);Rc*sin(angles)];
-P = polyshape(points(1,:), points(2,:));
-plot(P, 'FaceColor', obsColor, 'LineWidth', 2, 'FaceAlpha', 1.0); hold on;
 
 %setup plots
 axes1 = gca;
