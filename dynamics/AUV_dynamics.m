@@ -74,7 +74,7 @@ w = controls(3); r = controls(4);
                   0 0 0 0;
                   (m-Yvdot)*V(2) -(m-Xudot)*V(1) 0 0];
         C = (invJ)' * (Cv - M * invJ * Jdot) * invJ;
-        fx = invM * (-C * [xdot; ydot; zdot; psidot] - D * [xdot; ydot; zdot; psidot] -g);
+        fx = invM * (-C * [xdot; ydot; zdot; psidot] - D * [xdot; ydot; zdot; psidot]);
         F_sys = [xdot; ydot; zdot; psidot; fx];   
         G_sys = dt*[zeros(4);invM * (invJ)'];
         
