@@ -8,7 +8,7 @@
 clc; clear; close all;
 
 %% Example usage
-grid_map = readmatrix('Terrain Map.xlsx','Sheet','center_hill');
+grid_map = readmatrix('Terrain Map.xlsx','Sheet','C_shaped');
 max_val = max(grid_map,[],"all");
 height_map = grid_map./max_val;
 
@@ -46,8 +46,8 @@ fitted_height_map_fine = reshape(rbf_matrix_fine * weights, size(x_fine));
 % Query a height value at point (x, y)
 x_query = 11;  % Replace with your x-coordinate of the query point
 y_query = 11;  % Replace with your y-coordinate of the query point
-height_value = query_rbf_height([x_query, y_query], weights, centers, sigma);
-% disp(['Height at (', num2str(x_query), ', ', num2str(y_query), ') is ', num2str(height_value)]);
+height_value = query_rbf_height(x_query, y_query, weights, centers, sigma);
+disp(['Height at (', num2str(x_query), ', ', num2str(y_query), ') is ', num2str(height_value)]);
 
 %% Plot the fitted height map on a fine mesh grid
 figure;
@@ -71,3 +71,24 @@ zlabel('Height');
 % Make the figure look nicer
 colormap jet;
 colorbar;
+
+%%
+function height = query_rbf_height(x, y, weights, centers, sigma)
+    % Query the height value at a given point (x, y) using the fitted RBFs.
+    %
+    % Parameters:
+    % x - The x-coordinate of the query point.
+    % y - The y-coordinate of the query point.
+    %
+    % Returns:
+    % height - The height value at the query point.
+
+    num_centers = size(centers, 1);
+    rbf_values = zeros(1, num_centers);
+    for i = 1:num_centers
+        diff = [x, y] - centers(i, :);
+        rbf_values(i) = exp(-sum(diff.^2, 2) / (2 * sigma^2));
+    end
+    
+    height = rbf_values * weights;
+end
