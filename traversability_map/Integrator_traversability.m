@@ -29,10 +29,9 @@ n_controls = length(controls);
 
 % ------------- env setup -------------------------------------------------
 % initial Conditions on a grid
-x0 = [2;10]; x_ini = x0;
-xf = [15;10]; % target
+x0 = [2;12]; x_ini = x0;
+xf = [15;11]; % target
 rho_0 = 1e-2;
-tracking = 0; % set to 1 to track a ref traj
 
 % ------------- load height map and fit rbfs ------------------------------
 grid_map = readmatrix('Terrain Map.xlsx','Sheet','center_hill');
@@ -47,18 +46,19 @@ centers = [center_x(:), center_y(:)];
 % Fit RBFs and get the weights
 weights = fit_rbf(height_map, centers, sigma);
 
-%---------- MPC setup -----------------------------------------------------
-time_total = 10; % time for the total steps, equal to tsim
-N = 20; gamma = 0.05;
-dt = 0.01;
+%---------- MPC setup ----------------------
+time_total = 3; % time for the total steps, equal to tsim
+tracking = 0; % set to 1 to track a ref traj
+N = 10; gamma = 1;
+dt = 0.1; 
 Q = 1*diag([1,1]);
-R = 1e-2*diag([1, 1]);
+R = 1*diag([1, 1]);
+P_weight = 100*diag([1,1]); % terminal cost
 C_t = 0.1;
-P_weight = 100*diag([10,10]); % terminal cost
 
 xmin = [-inf; -inf];
 xmax = -xmin;
-umin = [-inf; -inf];
+umin = [-5; -5];
 umax = -umin;
 rho_min = 1e-2;
 rho_max = 1e3;
@@ -91,7 +91,6 @@ div_g_discrete = Function('div_G_discrete1',{states},{div_g_discrete});
 F = Function('F',{states,controls},{dx_dt}); 
 f = Function('f',{states},{f}); 
 g = Function('g',{states},{g});
-
 
 %% Casdai MPC setup
 % A vector that represents the states over the optimization problem.
@@ -167,7 +166,7 @@ for k = 1:N
     constraints = [constraints; density_constraint - slack];
 end
 
-% CONSTRAINT: rho(k+1) > rho(k)
+% % CONSTRAINT: rho(k+1) > rho(k)
 % for k = 1:N
 %     rho = RHO(:,k); 
 %     rho_next = RHO(:,k+1);
@@ -180,12 +179,11 @@ end
 
 % CONSTRAINT:  b(x_k)*rho_k <= gamma
 traversability = 0;
+num_centers = size(centers, 1);
+rbf_values = SX.zeros(1, num_centers);
 for k = 1:N
     st = X(:,k); 
     rho = RHO(:,k); 
-    
-    num_centers = size(centers, 1);
-    rbf_values = SX.zeros(1, num_centers);
     for i = 1:num_centers
         diff = st' - centers(i, :);
         rbf_values(i) = exp(-sum(diff.^2, 2) / (2 * sigma^2));
@@ -220,14 +218,14 @@ args.ubg(1:n_states*(N+1)) = 0;
 args.lbg(n_states*(N+1)+1 : n_states*(N+1)+N) = 0; 
 args.ubg(n_states*(N+1)+1 : n_states*(N+1)+N) = inf; 
 
-% bounds for CONSTRAINT: rho(k+1) > rho(k)
+% % bounds for CONSTRAINT: rho(k+1) > rho(k)
 % args.lbg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = 0;
 % args.ubg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = inf; 
 
-% % bounds for CONSTRAINT: b(x(k))*rho(k) <= gamma
+% bounds for CONSTRAINT: b(x(k))*rho(k) <= gamma
 % one constraint for entire horizon (sum over horizon)
 args.lbg(n_states*(N+1)+N+1) = 0; 
-args.ubg(n_states*(N+1)+N+1) = gamma; % 
+args.ubg(n_states*(N+1)+N+1) = gamma; 
 
 % ------------------- bounds ----------------------------------------------
 args.lbx(1:n_states:n_states*(N+1),1) = xmin(1); %state x lower bound
@@ -246,7 +244,7 @@ args.ubx(n_states*(N+1)+n_controls*N+1:n_states*(N+1)+n_controls*N+N,1) = inf; %
 args.lbx(n_states*(N+1)+n_controls*N+N+1:n_states*(N+1)+n_controls*N+N+N+1,1) = rho_min(1); %rho lower bound
 args.ubx(n_states*(N+1)+n_controls*N+N+1:n_states*(N+1)+n_controls*N+N+N+1,1) = rho_max(1); %rho upper bound
 
-%% Simulate MPC controller with AUV dynamics
+%% Simulate MPC controller
 % init
 t0 = 0;
 t(1) = t0;
@@ -283,7 +281,6 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
             y_ref = 1;
             if(x_ref >=12)
                 xref  = 12;
-                y_ref = 12;
             end
             args.p(n_states*k+1:n_states*k+n_states) = [x_ref, y_ref];
         end    
@@ -334,7 +331,7 @@ view(2)
 hold on
 
 % plot x-y-z trajecotry
-traj = plot(xlog(1,:), xlog(2,:),'LineWidth', 2,'Color',red);
+traj = plot(xlog(1,:), xlog(2,:),'o-','LineWidth', 2,'Color',red);
 xlabel('x(m)','interpreter','latex','FontSize',20);
 ylabel('y(m)','interpreter','latex','FontSize',20);
 hold on
@@ -349,8 +346,6 @@ box(axes1,'on');
 axis(axes1,'equal');
 grid on;
 
-% xlim([0,10])
-% ylim([yc-5,yc+5])
 hold(axes1,'off');
 xlabel('Position, $x$ (m)','interpreter','latex', 'FontSize', 20);
 ylabel('Position, $y$ (m)','interpreter','latex', 'FontSize', 20);
