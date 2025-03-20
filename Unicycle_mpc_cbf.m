@@ -1,6 +1,6 @@
 clc;
 clear;
-% close all;
+close all;
 import casadi.*
 addpath dynamics\ density_functions\ barrier_functions\
 
@@ -30,23 +30,23 @@ n_controls = length(controls);
 
 %---------- MPC setup ----------------------
 time_total = 10; % time for the total steps, equal to tsim
-N = 100; % for mismatch use N = 100
-dt = 0.1; % use dt = 0.1 for cbf and vanilla obs
+dt = 0.1;
 o = 3;
 Q = 100*diag([10,10,o,o]);
 P_weight = 1e3*diag([10,10,o,o]);
 R = 10*diag([1, 1]);
-
+N = 100;
+C_t = 0.1;
 
 xmin = [-inf; -inf; -inf; -inf];
 xmax = -xmin;
 
-umin = [-1; -10];
+umin = [-100; -100];
 umax = -umin;
 
 % ----------- Environment setup --------------------
 % initial Conditions on a grid
-x0 = [0;0.01;0;0]; x_ini = x0;
+x0 = [0;0;0;0]; x_ini = x0;
 xf = [10;0;0;0]; % target
 
 obs_x = SX.sym('obs_x');
@@ -59,31 +59,20 @@ obs = [obs_x;obs_y;obs_r;obs_s];
 num_obs = 1; % Number of obstacles
 obs_rad = 1;
 obs_sens = obs_rad + 1;
+
 obs1 = [4; 0; obs_rad(1); obs_sens(1)];
 
-%---------- cbf/obstalce constraint setup ---------------
+%---------- cbf setup --------------------
 b_circle = CBF_circle(states,obs);
 b_circle = Function('b',{states,obs},{b_circle}); 
-
-% for vanilla obs constraint: x not in x_obs
-obstacle_constraint = false;
-
-% for cbf: h_k+1 >= (1-gamma)*h_k
-cbf_constraint = ~obstacle_constraint; 
-gamma = 0.2;
+gamma = 0.1;
 
 
 %% Dynamics Setup 
-% dynamics without paramter mismatch
-mismatch = false;
-[dx_dt] = unicycle_dynamics_extended(states, controls, mismatch);
-% define matlab functions for F=f+gu, f, g
-F = Function('F',{states,controls},{dx_dt});
+[dx_dt] = unicycle_dynamics_extended(states, controls);
 
-% dynamics with paramter mismatch
-mismatch = false;
-[dx_dt_mismatch] = unicycle_dynamics_extended(states, controls, mismatch);
-F_mismatch = Function('F',{states,controls},{dx_dt_mismatch}); 
+% define matlab functions for F=f+gu, f, g
+F = Function('F',{states,controls},{dx_dt}); 
 
 %% Casdai MPC setup
 % A vector that represents the states over the optimization problem.
@@ -119,7 +108,7 @@ k = N+1;
 st = X(:,k);
 obj = obj+(st-P(n_states+1:2*n_states))'*P_weight*(st-P(n_states+1:2*n_states)); % calculate obj
 
-% constraint for obstacles (cbf of vanilla)
+% cbf constraint for obstacles
 for obs_num = 1:num_obs
     for k = 1:N
         % get current and next state
@@ -134,17 +123,9 @@ for obs_num = 1:num_obs
         b = b_circle(st,obs_loc);
         b_next =b_circle(st_next,obs_loc);
 
-        if(cbf_constraint)
-            % form CBF constraint
-            % h_k+1 >= (1-gamma)*h_k
-            CBF_constraint = b_next - b  + gamma*b;
-            constraints = [constraints; CBF_constraint];
-        else
-            % form vanilla constraint
-            % h(x) >= 0
-            obs_constraint = b;
-            constraints = [constraints; obs_constraint];
-        end
+        % form CBF constraint
+        CBF_constraint = b_next - b  + gamma*b;
+        constraints = [constraints; CBF_constraint];
     end
 end
 
@@ -221,12 +202,7 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     t(mpciter+1) = t0;
 
     % Apply the control and shift the solution
-    if(mismatch)
-        [t0, x0, u0] = shift(dt, t0, x0, u,F_mismatch);
-    else
-        [t0, x0, u0] = shift(dt, t0, x0, u,F);
-    end
-
+    [t0, x0, u0] = shift(dt, t0, x0, u,F);
     xlog(:,mpciter+1) = x0;
     X0 = reshape(full(sol.x(1:n_states*(N+1)))',n_states,N+1)'; % get solution TRAJECTORY
 
@@ -240,48 +216,28 @@ F = findall(0,'type','figure','tag','TMWWaitbar');
 delete(F);
 
 %% ---------------- plot 2D trajectory ----------------------  
-
-figure(1)
-
-% For legend as rectangular object can't be defined as a legend
-    dummy_marker = plot(NaN,NaN, 'o','MarkerSize', 10, 'MarkerEdgeColor',...
-            'black', 'MarkerFaceColor',obsColor, 'LineWidth', 1.5); 
-
 % plot x-y-z trajecotry
-traj = plot(xlog(1,:), xlog(2,:),'LineWidth', 2,'Color',red);
+figure(1)
+plot(xlog(1,:), xlog(2,:),'LineWidth', 2,'Color',red)
 xlabel('x(m)','interpreter','latex','FontSize',20);
 ylabel('y(m)','interpreter','latex','FontSize',20);
 hold on
 
 % plot start and target 
-% plot(x_ini(1), x_ini(2), 'o', 'MarkerSize',10, 'MarkerFaceColor','black','MarkerEdgeColor','black'); hold on;
-% plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
+plot(x_ini(1), x_ini(2), 'o', 'MarkerSize',10, 'MarkerFaceColor','black','MarkerEdgeColor','black'); hold on;
+plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
 
 % plot obstacles
 xc = obs1(1); yc = obs1(2); Rc = obs1(3);
-angles = (0:100-1)*(2*pi/100);
-points = [xc;yc] + [Rc*cos(angles);Rc*sin(angles)];
+gamma = (0:100-1)*(2*pi/100);
+points = [xc;yc] + [Rc*cos(gamma);Rc*sin(gamma)];
 P = polyshape(points(1,:), points(2,:));
 plot(P, 'FaceColor', obsColor, 'LineWidth', 2, 'FaceAlpha', 1.0); hold on;
 
-%setup plots
-axes1 = gca;
-box(axes1,'on');
-axis(axes1,'equal');
-
 % set other axis properties
-set(axes1,'FontSize',15,'LineWidth',2);
-if(cbf_constraint)
-    lgd = legend(traj,'CBF with $\gamma$ = '+string(gamma));
-else
-    lgd = legend(traj,'distance');
-end
-
-lgd.Interpreter = 'latex';
-lgd.FontSize = 15;
+axis equal
 grid on;
-xlim([0,10])
-ylim([yc-5,yc+5])
-hold(axes1,'off');
-xlabel('Position, $x$ (m)','interpreter','latex', 'FontSize', 20);
-ylabel('Position, $y$ (m)','interpreter','latex', 'FontSize', 20);
+xlabel('$x_1$','interpreter','latex', 'FontSize', 20);
+ylabel('$x_2$','interpreter','latex', 'FontSize', 20);
+xlim([-5 5])
+ylim([-1 10])
