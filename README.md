@@ -24,7 +24,7 @@ Density functions are a physically intuitive way to solve the safety critical co
 Next, we develop an example where we start the AUV system with initial positions along a plane. The objective here is to converge to the target position at $x_T = [0,-1,5]$ while avoiding spherical obstacles of varying sizes ranging from $r_k = [0.75,1,1.25]$. Fig below shows that each trajectory obtained from the proposed MPC-CDF framework converges to the target safely while avoiding obstacles. Note that we use $\alpha=0.1$ and $s_k=1$ when constructing the density function.
 
 <p align="center">
-<img src="figures/example1_cdf2.png" width="400">
+<img src="figures/example1_cdf.png" width="400">
 </p>
 
 In this example, we set up a complex underwater environment consisting of two torii, a cylinder and a share. The control task for the AUV is to go to a target position at $x_T = [4,4,8]$ starting from the initial position of $x_0=[0,-10,-8]$ while safely avoiding all the obstacles. In Figure below, the red trajectory is obtained using the proposed MPC-CDF framework (with $\alpha=0.1$ and $s_k = 10$) while the blue trajectory is obtained using MPC-CBF (with $\gamma=0.1$). It can be seen that the MPC-CDF trajectory is safer than the MPC-CBF near the spherical obstacle. Since the construction of the density function is physically intuitive, it is easier to tune the radius of the sensing region $s_k$ to achieve the desired level of safety.
