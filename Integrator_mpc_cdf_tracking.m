@@ -2,7 +2,7 @@ clc;
 clear;
 close all;
 import casadi.*
-addpath dynamics\ density_functions\ barrier_functions\
+addpath dynamics\ density_functions\ barrier_functions\ utils\
 
 % setup colors for plots
 colors = colororder;
@@ -30,9 +30,9 @@ n_controls = length(controls);
 time_total = 20; % time for the total steps, equal to tsim
 N = 5; % use N=10 if y_ref=1 and N=5 if y_ref=0.5
 dt = 0.01; % use dt = 0.1 for cbf and vanilla obs
-o = 1;
-Q = 10*diag([10,10]);
-R = 1*diag([1, 1]);
+P_weight = 100*diag([10,10]); % terminal cost
+Q = 10*diag([10,10]); % stage cost
+R = 1*diag([1, 1]); % control cost
 C_t = 0.1;
 
 xmin = [-inf; -inf];
@@ -45,7 +45,7 @@ umax = -umin;
 % initial Conditions on a grid
 x0 = [0;0.01]; x_ini = x0;
 xf = [10;0]; % target
-tracking = 1; % set to 1 for tracking a ref traj
+tracking = 0; % set to 1 for tracking a ref traj
 
 obs_x = SX.sym('obs_x');
 obs_y = SX.sym('obs_y');
@@ -62,8 +62,6 @@ obs1 = [4; 0; obs_rad(1); obs_sens(1)];
 %---------- cbf/obstalce constraint setup ---------------
 rho_circle = density_circle(states,obs);
 rho_circle = Function('b',{states,obs},{rho_circle}); 
-
-
 
 %% Dynamics Setup 
 % dynamics without paramter mismatch
@@ -139,6 +137,14 @@ for k = 1:N
     f_value = F(st,con);
     st_next_euler = st+ (dt*f_value);
     constraints = [constraints;st_next-st_next_euler]; 
+end
+
+% Add Terminal Cost
+if(~tracking)
+    
+    k = N+1;
+    st = X(:,k);
+    obj = obj+(st-P(n_states+1:2*n_states))'*P_weight*(st-P(n_states+1:2*n_states)); % calculate obj
 end
 
 % CONSTRAINT: density constraint for obstacles
@@ -297,7 +303,11 @@ axis(axes1,'equal');
 lgd.Interpreter = 'latex';
 lgd.FontSize = 15;
 grid on;
-xlim([0,x_ref])
+if(tracking)
+    xlim([0,x_ref])
+else
+    xlim([0,xf(2)])
+end
 ylim([yc-5,yc+5])
 hold(axes1,'off');
 xlabel('Position, $x$ (m)','interpreter','latex', 'FontSize', 20);
