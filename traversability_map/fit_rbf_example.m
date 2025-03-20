@@ -8,13 +8,12 @@
 clc; clear; close all;
 
 %% Example usage
-grid_map = readmatrix('Terrain Map.xlsx','Sheet','center_hill');
+grid_map = readmatrix('Terrain Map.xlsx','Sheet','C_shaped');
 max_val = max(grid_map,[],"all");
 height_map = grid_map./max_val;
 
-grid_spacing = 3;  % Adjust the spacing between RBF centers
-sigma = 1;  % Replace with your desired sigma
-
+grid_spacing = 1;  % Adjust the spacing between RBF centers
+sigma = 1;  % Tune sigma as needed
 
 % Get the size of the height map
 [rows, cols] = size(height_map);
@@ -45,8 +44,8 @@ end
 fitted_height_map_fine = reshape(rbf_matrix_fine * weights, size(x_fine));
 
 % Query a height value at point (x, y)
-x_query = 5.5;  % Replace with your x-coordinate of the query point
-y_query = 5.5;  % Replace with your y-coordinate of the query point
+x_query = 11;  % Replace with your x-coordinate of the query point
+y_query = 11;  % Replace with your y-coordinate of the query point
 height_value = query_rbf_height(x_query, y_query, weights, centers, sigma);
 disp(['Height at (', num2str(x_query), ', ', num2str(y_query), ') is ', num2str(height_value)]);
 
@@ -62,12 +61,12 @@ zlabel('Height');
 view(2)
 
 subplot(1, 2, 2);
-surf(x_fine, y_fine, fitted_height_map_fine);
+surf(x_fine, y_fine, fitted_height_map_fine, 'Edgecolor','none');
 title('Fitted Height Map on Fine Mesh Grid');
 xlabel('X');
 ylabel('Y');
 zlabel('Height');
-view(2)
+% view(2)
 
 % Make the figure look nicer
 colormap jet;
