@@ -36,17 +36,18 @@ tracking = 0; % set to 1 to track a ref traj
 
 %---------- MPC setup ----------------------
 time_total = 10; % time for the total steps, equal to tsim
-N = 5; % for mismatch use N = 100
+N = 2; % for mismatch use N = 100
 dt = 0.01; % use dt = 0.1 for cbf and vanilla obs
 Q = 10*diag([10,10]);
 R = 1e-2*diag([1, 1]);
-P_weight = 100*diag([10,10]); % terminal cost
 C_t = 0.1;
 
 xmin = [-inf; -inf];
 xmax = -xmin;
+
 umin = [-inf; -inf];
 umax = -umin;
+
 rho_min = 1e-2;
 rho_max = 1e3;
 
@@ -135,13 +136,6 @@ for k = 1:N
     constraints = [constraints;st_next-st_next_euler]; 
 end
 
-% Add Terminal Cost
-if(~tracking)  
-    k = N+1;
-    st = X(:,k);
-    obj = obj+(st-P(n_states+1:2*n_states))'*P_weight*(st-P(n_states+1:2*n_states)); % calculate obj
-end
-
 % CONSTRAINT: divergence constraint (from MPC-CDF paper)
 for k = 1:N
     % get current and next state
@@ -154,16 +148,16 @@ for k = 1:N
     constraints = [constraints; density_constraint - slack];
 end
 
-% % CONSTRAINT: rho(k+1) > rho(k)
-% for k = 1:N
-%     rho = RHO(:,k); 
-%     rho_next = RHO(:,k+1);
-% 
-%     % form constraint
-%     slack = dt*C(k)*rho;
-%     rho_increase = rho_next - rho - slack;
-%     constraints = [constraints; rho_increase];
-% end
+% CONSTRAINT: rho(k+1) > rho(k)
+for k = 1:N
+    rho = RHO(:,k); 
+    rho_next = RHO(:,k+1);
+
+    % form constraint
+    slack = dt*C(k)*rho;
+    rho_increase = rho_next - rho - slack;
+    constraints = [constraints; rho_increase];
+end
 
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
@@ -188,9 +182,9 @@ args.ubg(1:n_states*(N+1)) = 0; % equality constraints
 args.lbg(n_states*(N+1)+1 : n_states*(N+1)+N) = 0; % inequality constraints
 args.ubg(n_states*(N+1)+1 : n_states*(N+1)+N) = inf; % inequality constraints
 
-% % bounds for CONSTRAINT: rho(k+1) > rho(k)
-% args.lbg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = 0; % inequality constraints
-% args.ubg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = inf; % inequality constraints
+% bounds for CONSTRAINT: rho(k+1) > rho(k)
+args.lbg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = 0; % inequality constraints
+args.ubg(n_states*(N+1)+N+1 : n_states*(N+1)+N+N) = inf; % inequality constraints
 
 args.lbx(1:n_states:n_states*(N+1),1) = xmin(1); %state x lower bound
 args.ubx(1:n_states:n_states*(N+1),1) = xmax(1); %state x upper bound
