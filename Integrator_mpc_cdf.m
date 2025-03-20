@@ -28,10 +28,11 @@ n_controls = length(controls);
 
 %---------- MPC setup ----------------------
 time_total = 20; % time for the total steps, equal to tsim
-N = 5; % use N=10 if y_ref=1 and N=5 if y_ref=0.5
-dt = 0.01; % use dt = 0.1 for cbf and vanilla obs
+N = 5; % for mismatch use N = 100
+dt = 0.02; % use dt = 0.1 for cbf and vanilla obs
 o = 1;
 Q = 10*diag([10,10]);
+P_weight = 100*diag([10,10]);
 R = 1*diag([1, 1]);
 C_t = 0.1;
 
@@ -45,7 +46,6 @@ umax = -umin;
 % initial Conditions on a grid
 x0 = [0;0.01]; x_ini = x0;
 xf = [10;0]; % target
-tracking = 1; % set to 1 for tracking a ref traj
 
 obs_x = SX.sym('obs_x');
 obs_y = SX.sym('obs_y');
@@ -84,15 +84,25 @@ div_g_discrete1 = sum(diag(jacob_G_discrete1));
 g_discrete2 = g_discrete(:,2);
 jacob_g_discrete2 = jacobian(g_discrete2, states');
 div_g_discrete2 = sum(diag(jacob_g_discrete2));
+% 
+% g_discrete3 = g_discrete(:,3);
+% jacob_g_discrete3 = jacobian(g_discrete3, states');
+% div_g_discrete3 = sum(diag(jacob_g_discrete3));
+% 
+% g_discrete4 = g_discrete(:,4);
+% jacob_g_discrete4 = jacobian(g_discrete4, states');
+% div_g_discrete4 = sum(diag(jacob_g_discrete4));
 
 % calculate the total divergence of g_discrete
 div_g_discrete = div_g_discrete1+div_g_discrete2;%+div_g_discrete3+div_g_discrete4;
 div_g_discrete = Function('div_G_discrete1',{states},{div_g_discrete});
 
+
 % define matlab functions for F=f+gu, f, g
 F = Function('F',{states,controls},{dx_dt}); 
 f = Function('f',{states},{f}); 
 g = Function('g',{states},{g});
+
 
 %% Casdai MPC setup
 % A vector that represents the states over the optimization problem.
@@ -105,43 +115,33 @@ U = SX.sym('U',n_controls,N);
 C = SX.sym('C',N); 
 
 % parameters (which include at the initial state of the robot and the reference state)
-if(tracking)
-    P = SX.sym('P',n_states + N*n_states); % for ref tracking
-else
-    P = SX.sym('P',n_states + n_states); % for point stabliziation
-end
+P = SX.sym('P',n_states + n_states);
 
 obj = 0; % Objective function
 constraints = [];  % constraints vector
 
-% CONSTRAINT: initial condition constraints
 st  = X(:,1); % initial state
-constraints = [constraints;st-P(1:n_states)]; 
+constraints = [constraints;st-P(1:n_states)]; % initial condition constraints
 
 %------------- Compute cost and constriants -------------------------
 % compute running cost and dynamics constraint
 for k = 1:N
     st = X(:,k);
     con = U(:,k);
-    
-    % COST: conpute cost
-    if(tracking)
-        % for tracking
-        obj = obj+(st-P(n_states*k+1:n_states*k+n_states))'*Q*(st-P(n_states*k+1:n_states*k+n_states)) + con'*R*con;
-    else
-        % for point stabilization
-        obj = obj+(st-P(n_states+1:2*n_states))'*Q*(st-P(n_states+1:2*n_states)) + con'*R*con;
-    end
-    
-    % CONSTRAINT: dynamics constraint
-    % x(k+1) = F(x(k),u(k))
+    obj = obj+(st-P(n_states+1:2*n_states))'*Q*(st-P(n_states+1:2*n_states)) + con'*R*con; % calculate obj
     st_next = X(:,k+1);
     f_value = F(st,con);
     st_next_euler = st+ (dt*f_value);
-    constraints = [constraints;st_next-st_next_euler]; 
+    constraints = [constraints;st_next-st_next_euler]; % x(k+1) = F(x(k),u(k))
 end
 
-% CONSTRAINT: density constraint for obstacles
+% Add Terminal Cost
+k = N+1;
+st = X(:,k);
+obj = obj+(st-P(n_states+1:2*n_states))'*P_weight*(st-P(n_states+1:2*n_states)); % calculate obj
+
+
+% density constraint for obstacles
 for obs_num = 1:num_obs
     for k = 1:N
         % get current and next state
@@ -189,75 +189,61 @@ args.ubx(1:n_states:n_states*(N+1),1) = xmax(1); %state x upper bound
 args.lbx(2:n_states:n_states*(N+1),1) = xmin(2); %state y lower bound
 args.ubx(2:n_states:n_states*(N+1),1) = xmax(2); %state y upper bound
 
+
 args.lbx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umin(1); %u1 lower bound
 args.ubx(n_states*(N+1)+1:n_controls:n_states*(N+1)+n_controls*N,1) = umax(1); %u1 upper bound
 args.lbx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umin(2); %u2 lower bound
 args.ubx(n_states*(N+1)+2:n_controls:n_states*(N+1)+n_controls*N,1) = umax(2); %u2 upper bound
 
-args.lbx(n_states*(N+1)+n_controls*N+1:n_states*(N+1)+n_controls*N+N,1) = 0; %C lower bound
-args.ubx(n_states*(N+1)+n_controls*N+1:n_states*(N+1)+n_controls*N+N,1) = inf; %C upper bound
+args.lbx(n_states*(N+1)+n_controls*N+1:1:n_states*(N+1)+n_controls*N+N,1) = 0; %C lower bound
+args.ubx(n_states*(N+1)+n_controls*N+1:1:n_states*(N+1)+n_controls*N+N,1) = inf; %C upper bound
 
 
 %% Simulate MPC controller with AUV dynamics
-% init
 t0 = 0;
+xlog(:,1) = x0; % xx contains the history of states
+t(1) = t0;
 u0 = zeros(N,n_controls);
 X0 = repmat(x0,1,N+1)';
 C_0 = repmat(C_t,1,N);
 
-% logging
-xlog(:,1) = x0;
-t(1) = t0;
+% Start MPC
+mpciter = 0;
+xx1 = [];
 u_cl=[];
 C_log = [];
 
-% Start MPC
-mpciter = 1;
 w_bar = waitbar(0,'1','Name','Simulating MPC-CDF...',...
     'CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
 
 while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
     max_iter = time_total/dt;
-    current_time = mpciter*dt;
     waitbar(mpciter/max_iter,w_bar,sprintf(string(mpciter)+'/'+string(max_iter)))
     
-    % set the values of the parameters vector
-    if(tracking)
-        % for tracking:
-        args.p(1:n_states) = x0;
-        for k=1:N
-            t_predict = current_time + (k-1)*dt;
-            x_ref = 0.5*t_predict;
-            y_ref = 0.5;
-            if(x_ref >=12)
-                x_ref  = 12;
-                y_ref = 12;
-            end
-            args.p(n_states*k+1:n_states*k+n_states) = [x_ref, y_ref];
-        end    
-    else   
-        args.p   = [x0;xf]; % for point stabilization
-    end
-        
+    args.p   = [x0;xf]; % set the values of the parameters vector
+
     % initial value of the optimization variables
     args.x0  = [reshape(X0',n_states*(N+1),1);reshape(u0',n_controls*N,1);reshape(C_0',N,1)];
     sol = solver('x0', args.x0, 'lbx', args.lbx, 'ubx', args.ubx,...
-        'lbg', args.lbg, 'ubg', args.ubg, 'p', args.p);
-    
-    % get solutions
-    u = reshape(full(sol.x(n_states*(N+1)+1:n_states*(N+1)+n_controls*N))',n_controls,N)'; % get controls only from the solution
-    C_0 = reshape(full(sol.x(end-N+1:end))',1,N);
-   
-    % Apply the control and shift the solution
-    [t0, x0, u0] = shift(dt, t0, x0, u,F);
-
-    xlog(:,mpciter+1) = x0;
-    C_log = [C_log; C_0];
+        'lbg', args.lbg, 'ubg', args.ubg,'p',args.p);
+    u = reshape(full(sol.x(n_states*(N+1)+1:end-N))',n_controls,N)'; % get controls only from the solution
+    xx1(:,1:n_states,mpciter+1)= reshape(full(sol.x(1:n_states*(N+1)))',n_states,N+1)'; % get solution TRAJECTORY
     u_cl= [u_cl ; u(1,:)];
     t(mpciter+1) = t0;
     
-    % Shift trajectory to initialize the next step
+    C_0 = reshape(full(sol.x(end-N+1:end))',1,N);
+    C_log = [C_log; C_0];
+
+    % Apply the control and shift the solution
+
+    [t0, x0, u0] = shift(dt, t0, x0, u,F);
+
+
+    xlog(:,mpciter+1) = x0;
     X0 = reshape(full(sol.x(1:n_states*(N+1)))',n_states,N+1)'; % get solution TRAJECTORY
+
+
+    % Shift trajectory to initialize the next step
     X0 = [X0(2:end,:);X0(end,:)];
     mpciter = mpciter + 1;
 end
@@ -268,7 +254,10 @@ delete(F);
 %% ---------------- plot 2D trajectory ----------------------  
 
 figure(1)
-      
+% For legend as rectangular object can't be defined as a legend
+    dummy_marker = plot(NaN,NaN, 'o','MarkerSize', 10, 'MarkerEdgeColor',...
+            'black', 'MarkerFaceColor',obsColor, 'LineWidth', 1.5); 
+        
 % plot obstacles
 xc = obs1(1); yc = obs1(2); Rc = obs1(3);
 angles = (0:100-1)*(2*pi/100);
@@ -283,21 +272,27 @@ ylabel('y(m)','interpreter','latex','FontSize',20);
 hold on
 
 % plot start and target 
-if(tracking)
-    xf = [x_ref;y_ref];
-end
-plot(x_ini(1), x_ini(2), 'o', 'MarkerSize',10, 'MarkerFaceColor','black','MarkerEdgeColor','black'); hold on;
-plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
+% plot(x_ini(1), x_ini(2), 'o', 'MarkerSize',10, 'MarkerFaceColor','black','MarkerEdgeColor','black'); hold on;
+% plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
+
 
 %setup plots
 axes1 = gca;
 box(axes1,'on');
 axis(axes1,'equal');
 
+% set other axis properties
+% set(axes1,'FontSize',15,'LineWidth',2);
+% if(cbf_constraint)
+%     lgd = legend(traj,'CBF with $\gamma$ = '+string(gamma));
+% else
+%     lgd = legend(traj,'distance');
+% end
+
 lgd.Interpreter = 'latex';
 lgd.FontSize = 15;
 grid on;
-xlim([0,x_ref])
+xlim([0,10])
 ylim([yc-5,yc+5])
 hold(axes1,'off');
 xlabel('Position, $x$ (m)','interpreter','latex', 'FontSize', 20);
