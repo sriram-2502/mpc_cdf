@@ -68,7 +68,7 @@ centers = [center_x(:), center_y(:)];
 weights = fit_rbf(height_map, centers, sigma);
 
 % ------------ Density function setup ------------
-b_x = query_rbf_height(states', weights, centers, sigma);
+b_x = query_rbf_height(states', weights, centers, sigma)+5;
 V_x = b_x;
 lyap_fun = Function('rho',{states},{V_x});
 
@@ -171,7 +171,7 @@ for k = 1:N
     V_next = lyap_fun(st_next');
 
     % form density constraint
-    alpha = 0.8;
+    alpha = 1;
     lyap_stability = V_next - V + alpha*V;
     constraints = [constraints; lyap_stability];
 end
@@ -216,7 +216,7 @@ args.ubg(1:n_states*(N+1)) = 0;
 %------------------ inequality constraints -------------------------------
 % bounds for CONSTRAINT: divergence constriant from MPC-CDF paper
 args.lbg(n_states*(N+1)+1 : n_states*(N+1)+N) = -Inf; 
-args.ubg(n_states*(N+1)+1 : n_states*(N+1)+N) = 0; 
+args.ubg(n_states*(N+1)+1 : n_states*(N+1)+N) = -1e-2; 
 
 % bounds for CONSTRAINT: b(x(k))*rho(k) <= gamma
 % one constraint for entire horizon (sum over horizon)
@@ -428,7 +428,7 @@ subplot(3,2,[5,6])
 plot(tlog, full(V_log), 'LineWidth', 2,'Color',blue);
 xlabel('time (s)','interpreter','latex', 'FontSize', 20);
 ylabel('Lyapunov, $V(x)$','interpreter','latex', 'FontSize', 20);
-lgd = legend('$\rho$');
+lgd = legend('$V$');
 lgd.Interpreter = 'latex';
 lgd.FontSize = 15;
 grid on
