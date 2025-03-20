@@ -8,5 +8,5 @@ st = st + (T*f_value);
 
 x0 = full(st);
 t0 = t0 + T;
-u0 = [u(2:size(u,1),:); u(size(u,1),:)];
+u0 = [u(2:size(u,1),:);u(size(u,1),:)];
 end
