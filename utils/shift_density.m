@@ -1,7 +1,5 @@
 function [t0, x0, u0] = shift_density(T, t0, x0, u, f, rho)
 st = x0;
-% apply receeding horizon control as 
-% rho_bar(1)/rho
 con = u(1,:)'/rho(1);
 
 
