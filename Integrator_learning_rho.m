@@ -2,7 +2,7 @@ clc;
 clear;
 close all;
 import casadi.*
-addpath dynamics\ density_functions\ barrier_functions\ utils\
+addpath dynamics\ density_functions\ barrier_functions\
 
 % setup colors for plots
 colors = colororder;
@@ -141,6 +141,8 @@ for k = 1:N
     % get current and next state
     st = X(:,k); st_next = X(:,k+1);
     rho = RHO(:,k); rho_next = RHO(:,k+1);
+    % get current control
+    con = RHO_bar(:,k);
 
     % form density constraint
     density_constraint = (rho_next-rho) + dt*(div_f_discrete(st)+div_g_discrete(st))*rho;

@@ -6,8 +6,8 @@ grid_map = readmatrix('Terrain Map.xlsx','Sheet','C_shaped');
 max_val = max(grid_map,[],"all");
 height_map = grid_map./max_val;
 
-grid_spacing = 3;  % Adjust the spacing between RBF centers
-sigma = 1;  % Replace with your desired sigma
+grid_spacing = 1;  % Adjust the spacing between RBF centers
+sigma = 0.1;  % Replace with your desired sigma
 rbf_fitting_and_plot_fine_mesh(height_map, grid_spacing, sigma);
 
 %% plotting functions
