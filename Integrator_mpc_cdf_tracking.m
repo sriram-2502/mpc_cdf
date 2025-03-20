@@ -34,10 +34,10 @@ P_weight = 100*diag([10,10]); % terminal cost
 Q = 10*diag([10,10]); % stage cost
 R = 1*diag([1, 1]); % control cost
 C_t = 0.1;
-tracking = 0; % set to 1 for tracking a ref traj
 
 xmin = [-inf; -inf];
 xmax = -xmin;
+
 umin = [-inf; -inf];
 umax = -umin;
 
@@ -45,6 +45,7 @@ umax = -umin;
 % initial Conditions on a grid
 x0 = [0;0.01]; x_ini = x0;
 xf = [10;0]; % target
+tracking = 0; % set to 1 for tracking a ref traj
 
 obs_x = SX.sym('obs_x');
 obs_y = SX.sym('obs_y');
@@ -139,7 +140,8 @@ for k = 1:N
 end
 
 % Add Terminal Cost
-if(~tracking)  
+if(~tracking)
+    
     k = N+1;
     st = X(:,k);
     obj = obj+(st-P(n_states+1:2*n_states))'*P_weight*(st-P(n_states+1:2*n_states)); % calculate obj
@@ -235,6 +237,7 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt)
             y_ref = 0.5;
             if(x_ref >=12)
                 x_ref  = 12;
+                y_ref = 12;
             end
             args.p(n_states*k+1:n_states*k+n_states) = [x_ref, y_ref];
         end    
@@ -303,7 +306,7 @@ grid on;
 if(tracking)
     xlim([0,x_ref])
 else
-    xlim([0,xf(1)])
+    xlim([0,xf(2)])
 end
 ylim([yc-5,yc+5])
 hold(axes1,'off');
