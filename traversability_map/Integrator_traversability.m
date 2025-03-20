@@ -4,12 +4,6 @@ close all;
 import casadi.*
 addpath ..\dynamics\ ..\density_functions\ ..\barrier_functions\ ..\utils\
 
-% Set defaults
-set(0, 'DefaultFigureColor', 'w');
-set(0, 'DefaultAxesColor', 'w');
-set(0, 'DefaultLineLineWidth', 2);
-set(0, 'DefaultAxesLineWidth', 1);
-
 % setup colors for plots
 colors = colororder;
 blue = colors(1,:);
@@ -28,20 +22,20 @@ states = [x; y];
 n_states = length(states);
 
 % control Inputs in density space
-u1 = SX.sym('u1');
-u2 = SX.sym('u2');
-controls = [u1;u2];
+rho_bar1 = SX.sym('rho_bar1');
+rho_bar2 = SX.sym('rho_bar2');
+controls = [rho_bar1;rho_bar2];
 n_controls = length(controls);
 
 %---------- MPC setup ----------------------
-time_total = 20; % time for the total steps, equal to tsim
-tracking = 10; % set to 1 to track a ref traj
+time_total = 3; % time for the total steps, equal to tsim
+tracking = 0; % set to 1 to track a ref traj
 N = 10; gamma = 1;
-dt = 0.1; dt_sim = 0.1;
+dt = 0.1; dt_sim = 0.01;
 Q = 1*diag([1,1]);
 R = 1*diag([1, 1]);
 P_terminal = 1e2*diag([1,1]); % terminal cost
-P_trav = 1e1; % weight on trav cost
+P_trav = 1e2; % weight on trav cost
 P_rho = 0.1; % cost on rho
 C_t = 0.1;
 
@@ -54,7 +48,7 @@ rho_max = 1e2;
 
 % ------------- env setup -------------------------------------------------
 % initial Conditions on a grid
-x0 = [1;13]; x_ini = x0;
+x0 = [2;20]; x_ini = x0;
 xf = [27;11]; % target
 rho_0 = rho_min;
 
@@ -110,7 +104,7 @@ X = SX.sym('X',n_states,(N+1));
 RHO = SX.sym('rho',1,(N+1));
 
 % Decision variables for control (rho bar)
-U = SX.sym('U',n_controls, N); 
+RHO_bar = SX.sym('rho_bar',n_controls, N); 
 
 % Decision variables for slack
 C = SX.sym('C',N); 
@@ -136,7 +130,7 @@ constraints = [constraints;st-P(1:n_states)];
 for k = 1:N
     st = X(:,k);
     rho = RHO(:,k);
-    con = U(:,k);
+    con = RHO_bar(:,k);
     
     % COST: get cost function
     % sum{q(x)*rho + rho_bar.T*R*rho_bar/rho}
@@ -188,7 +182,7 @@ end
 %     constraints = [constraints; rho_increase];
 % end
 
-% CONSTRAINT/Obj:  b(x_k)*rho_k <= gamma
+% CONSTRAINT:  b(x_k)*rho_k <= gamma
 traversability = 0;
 num_centers = size(centers, 1);
 rbf_values = SX.zeros(1, num_centers);
@@ -208,7 +202,7 @@ obj = obj + P_trav*traversability;
 
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
-OPT_variables = [reshape(X,n_states*(N+1),1); reshape(U,n_controls*N,1);...
+OPT_variables = [reshape(X,n_states*(N+1),1); reshape(RHO_bar,n_controls*N,1);...
     reshape(C,N,1); reshape(RHO,N+1,1);];
 nlp_prob = struct('f', obj, 'x', OPT_variables, 'g', constraints, 'p', P);
 
@@ -265,17 +259,14 @@ u0 = zeros(N,n_controls);
 X0 = repmat(x0,1,N+1)';
 C_0 = repmat(C_t,1,N);
 RHO_0 = repmat(rho_0,1,N+1)';
-tstart = 0; tend = dt_sim;
 
 % logging
 x_sol = [];
 u_cl=[];
 rho_sol = [];
 C_log = [];
-tlog = [];
 xlog(:,1) = x0; 
 rho_log(:,1) = rho_0;
-tlog(1) = t0;
 
 % Start MPC
 mpciter = 1;
@@ -294,10 +285,10 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt_sim)
         args.p(1:n_states) = x0;
         for k=1:N
             t_predict = current_time + (k-1)*dt_sim;
-            x_ref = 2*t_predict;
-            y_ref = 13;
-            if(x_ref >= 25)
-                xref  = 25;
+            x_ref = 0.5*t_predict;
+            y_ref = 1;
+            if(x_ref >=12)
+                xref  = 12;
             end
             args.p(n_states*k+1:n_states*k+n_states) = [x_ref, y_ref];
         end    
@@ -318,21 +309,13 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt_sim)
     toc
     
     % Apply the control and shift the solution
-%     [t0, x0, u0] = shift(dt_sim, t0, x0, u, F);
-    
-    u_star = u(1,:)'/rho(1);
-    [t,X] = ode45(@(t,x)full(F(x,u_star)),[tstart,tend],x0);
-    % --- update ---
-    x0 = X(end,:)';
-    tstart = tend; 
-    tend = tend + dt_sim;
-    t0 = tend;
+    [t0, x0, u0] = shift_density(dt_sim, t0, x0, u, F, rho);
     
     % logging
     xlog(:,mpciter+1) = x0;
     rho_log(:,mpciter+1) = rho(1);
     u_cl= [u_cl ; u(1,:)];
-    tlog(mpciter+1) = t0;
+    t(mpciter+1) = t0;
     C_log = [C_log; C_0];
     
     % Shift trajectory to initialize the next step
@@ -341,8 +324,8 @@ while(norm((x0-xf),2) > 1e-2 && mpciter < time_total / dt_sim)
     mpciter = mpciter + 1;
 end
 
-waitbar_graphics = findall(0,'type','figure','tag','TMWWaitbar');
-delete(waitbar_graphics);
+F = findall(0,'type','figure','tag','TMWWaitbar');
+delete(F);
 
 %% ---------------- plot 2D trajectory ----------------------  
 close all
@@ -358,16 +341,15 @@ view(2)
 hold on
 
 % plot x-y-z trajecotry
-traj = plot(xlog(1,:), xlog(2,:),'-','LineWidth', 2,'Color',red);
+traj = plot(xlog(1,:), xlog(2,:),'o-','LineWidth', 2,'Color',red);
 xlabel('x(m)','interpreter','latex','FontSize',20);
 ylabel('y(m)','interpreter','latex','FontSize',20);
 hold on
 
 % plot start and target 
 plot(x_ini(1), x_ini(2), 'o', 'MarkerSize',10, 'MarkerFaceColor','black','MarkerEdgeColor','black'); hold on;
-if(~tracking)
-    plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
-end
+plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
+
 %setup plots
 axes1 = gca;
 box(axes1,'on');
@@ -376,7 +358,6 @@ axis(axes1,'square');
 hold(axes1,'off');
 xlabel('position, $x$ (m)','interpreter','latex', 'FontSize', 20);
 ylabel('position, $y$ (m)','interpreter','latex', 'FontSize', 20);
-xlim([1,28]); ylim([1,28])
 
 %%%%%%%%%%%%%%
 subplot(1,2,2)
@@ -409,15 +390,13 @@ hold on
 
 % plot start and target 
 plot(x_ini(1), x_ini(2), 'o', 'MarkerSize',10, 'MarkerFaceColor','black','MarkerEdgeColor','black'); hold on;
-if(~tracking)
-    plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
-end
+plot(xf(1), xf(2), 'o', 'MarkerSize',10, 'MarkerFaceColor',green,'MarkerEdgeColor',green); hold on;
 
 %setup plots
 axes1 = gca;
 box(axes1,'on');
 axis(axes1,'square');
-xlim([1,28]); ylim([1,28])
+
 hold(axes1,'off');
 xlabel('position, $x$ (m)','interpreter','latex', 'FontSize', 20);
 ylabel('position, $y$ (m)','interpreter','latex', 'FontSize', 20);
@@ -425,32 +404,30 @@ ylabel('position, $y$ (m)','interpreter','latex', 'FontSize', 20);
 %% plot ctrol and density functions vs time
 figure(2)
 subplot(3,2,[1,2])
-plot(tlog, xlog(1,:),'-','LineWidth', 2, 'Color',blue); hold on;
-plot(tlog, xlog(2,:),'LineWidth', 2,'Color',red);
-xlabel('time (s)','interpreter','latex', 'FontSize', 20);
+plot(t, xlog(1,:),'LineWidth', 2,'Color',blue); hold on;
+plot(t, xlog(2,:),'LineWidth', 2,'Color',red);
+xlabel('time (s) (m)','interpreter','latex', 'FontSize', 20);
 ylabel('states (m)','interpreter','latex', 'FontSize', 20);
 lgd = legend('x','y');
 lgd.Interpreter = 'latex';
 lgd.FontSize = 15;
 grid on
-xlim([0,20])
 
 subplot(3,2,[3,4])
-plot(tlog(1:end-1), u_cl(:,1),'LineWidth', 2,'Color',blue); hold on;
-plot(tlog(1:end-1), u_cl(:,2),'LineWidth', 2,'Color',red);
-xlabel('time (s)','interpreter','latex', 'FontSize', 20);
+plot(t(1:end-1), u_cl(:,1),'LineWidth', 2,'Color',blue); hold on;
+plot(t(1:end-1), u_cl(:,2),'LineWidth', 2,'Color',red);
+xlabel('time (s) (m)','interpreter','latex', 'FontSize', 20);
+ylabel('controls (m/s)','interpreter','latex', 'FontSize', 20);
 lgd = legend('$u_1$','$u_2$');
 lgd.Interpreter = 'latex';
 lgd.FontSize = 15;
 grid on
-xlim([0,20])
 
 subplot(3,2,[5,6])
-plot(tlog, rho_log, 'LineWidth', 2,'Color',blue);
-xlabel('time (s)','interpreter','latex', 'FontSize', 20);
+plot(t, rho_log, 'LineWidth', 2,'Color',blue);
+xlabel('time (s) (m)','interpreter','latex', 'FontSize', 20);
 ylabel('density, $\rho(x)$','interpreter','latex', 'FontSize', 20);
 lgd = legend('$\rho$');
 lgd.Interpreter = 'latex';
 lgd.FontSize = 15;
 grid on
-xlim([0,20])
