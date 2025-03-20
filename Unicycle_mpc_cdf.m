@@ -69,7 +69,7 @@ rho_circle = Function('b',{states,obs},{rho_circle});
 
 %% Dynamics Setup 
 % dynamics without paramter mismatch
-[dx_dt,f,g] = unicycle_dynamics(states, controls);
+[dx_dt,f,g] = unicycle_dynamics(states, controls, dt);
 f_discrete = dt*f + states;
 g_discrete = dt*g;
 
@@ -134,7 +134,7 @@ for k = 1:N
     st_next = X(:,k+1);
     f_value = F(st,con);
     st_next_euler = st+ (dt*f_value);
-    constraints = [constraints;st_next-st_next_euler]; % x(k+1) = F(x(k),u(k))
+    constraints = [constraints;st_next-st_next_euler]; % compute constraints
 end
 
 % Add Terminal Cost
@@ -164,6 +164,8 @@ for obs_num = 1:num_obs
         constraints = [constraints; density_constraint - slack];
     end
 end
+
+
 
 %------------- Setup optimization problem -------------------------
 % make the decision variable one column  vector
