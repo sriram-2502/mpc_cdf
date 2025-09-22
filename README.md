@@ -4,7 +4,15 @@ This paper presents MPC-CDF, a novel approach integrating density functions with
 
 <!-- Check out our paper on Science Direct: https://www.sciencedirect.com/science/article/pii/S2405896323024242 -->
 
-Here is an Arvix version: [https://arxiv.org/abs/2305.03868](https://arxiv.org/abs/2509.13257) 
+Here is an ArXiv version: [https://arxiv.org/abs/2305.03868](https://arxiv.org/abs/2509.13257) 
+```
+@article{narayanan2025safety,
+  title={Safety Critical Model Predictive Control Using Discrete-Time Control Density Functions},
+  author={Narayanan, Sriram SKS and Ahmadi, Sajad and Velni, Javad Mohammadpour and Vaidya, Umesh},
+  journal={arXiv preprint arXiv:2509.13257},
+  year={2025}
+}
+```
 
 ## Intuition behind Control Density functions (CDF)
 
